@@ -14,7 +14,7 @@ A lightweight, standalone database written in C. Runs as its own process and com
 ## Project Structure
 
 ```
-custom-db/
+poudb/
 ├── src/        # Source files
 ├── include/    # Header files
 ├── build/      # Object files (ignored by git)
