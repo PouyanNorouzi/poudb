@@ -1,0 +1,31 @@
+# Build output
+/build/
+/bin/
+
+# cache
+.cache
+
+# Editor/IDE files
+*.swp
+*~
+*.log
+.vscode/
+.idea/
+.DS_Store
+
+# Dependency files
+*.d
+
+# Compiled objects
+*.o
+*.out
+*.exe
+
+# Binaries
+poudb
+
+# Backup files
+*.bak
+
+# compile commands
+compile_commands.json
