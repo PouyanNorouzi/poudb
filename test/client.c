@@ -1,66 +1,80 @@
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
 #include <arpa/inet.h>
+#include <netinet/in.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 #define DEFAULT_PORT 3005
-#define SERVER_IP "127.0.0.1"
 #define BUFFER_SIZE 1024
 
-/**
- * Simple client that connects to the server and receives a message.
- */
 int main(void) {
     int clientfd;
     struct sockaddr_in server_addr;
     char buffer[BUFFER_SIZE];
+    ssize_t bytes_read;
 
     // Create socket
     clientfd = socket(AF_INET, SOCK_STREAM, 0);
     if (clientfd == -1) {
         perror("Error creating socket");
-        return -1;
+        exit(EXIT_FAILURE);
     }
-    printf("Socket created successfully\n");
 
-    // Prepare server address
+    // Setup server address structure
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(DEFAULT_PORT);
-    server_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
-    // Convert IP address from text to binary
-    // if (inet_pton(AF_INET, SERVER_IP, &server_addr.sin_addr) <= 0) {
-    //     perror("Invalid address");
-    //     close(clientfd);
-    //     return -1;
-    // }
+    // Convert IPv4 address from text to binary
+    if (inet_pton(AF_INET, "127.0.0.1", &server_addr.sin_addr) <= 0) {
+        perror("Invalid address");
+        close(clientfd);
+        exit(EXIT_FAILURE);
+    }
 
-    // Connect to server
-    if (connect(clientfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) == -1) {
+    // Connect to the server
+    if (connect(clientfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
         perror("Connection failed");
         close(clientfd);
-        return -1;
+        exit(EXIT_FAILURE);
     }
-    printf("Connected to server at %s:%d\n", SERVER_IP, DEFAULT_PORT);
 
-    // Receive message from server
-    // memset(buffer, 0, BUFFER_SIZE);
-    // ssize_t bytes_received = read(clientfd, buffer, BUFFER_SIZE - 1);
+    printf("Connected to server. Type your message (Ctrl+C to quit):\n");
 
-    // if (bytes_received > 0) {
-    //     printf("Message received from server: %s\n", buffer);
-    // } else if (bytes_received == 0) {
-    //     printf("Server closed the connection\n");
-    // } else {
-    //     perror("Error receiving data");
-    // }
+    // Main loop for user input
+    while (1) {
+        printf("> ");
 
-    // Close connection
+        // Get user input
+        if (fgets(buffer, BUFFER_SIZE, stdin) == NULL) {
+            break; // Exit on EOF
+        }
+
+        // Remove trailing newline
+        buffer[strcspn(buffer, "\n")] = 0;
+
+        // Send the message to server
+        send(clientfd, buffer, strlen(buffer), 0);
+
+        // Clear buffer for receiving response
+        memset(buffer, 0, BUFFER_SIZE);
+
+        // Receive server's response
+        bytes_read = recv(clientfd, buffer, BUFFER_SIZE - 1, 0);
+        if (bytes_read > 0) {
+            buffer[bytes_read] = '\0'; // Null-terminate
+            printf("Server response: %s\n", buffer);
+        } else if (bytes_read == 0) {
+            printf("Server closed the connection\n");
+            break;
+        } else {
+            perror("recv failed");
+            break;
+        }
+    }
+
     close(clientfd);
-    printf("Connection closed\n");
-
     return 0;
 }
