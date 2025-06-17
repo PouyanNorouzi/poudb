@@ -7,6 +7,9 @@ SRC_DIR = src
 OBJ_DIR = build
 BIN_DIR = bin
 
+# Test Settings
+TEST_DIR = test
+
 # Source and Object Files
 SRCS := $(wildcard $(SRC_DIR)/*.c)
 OBJS := $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/%.o, $(SRCS))
@@ -30,8 +33,32 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c | $(OBJ_DIR)
 $(BIN_DIR) $(OBJ_DIR):
 	mkdir -p $@
 
+# Test client targets
+test_client: $(BIN_DIR)/client
+
+$(BIN_DIR)/client: $(TEST_DIR)/client.c | $(BIN_DIR)
+	$(CC) $(CFLAGS) $< -o $@
+	@echo "Test client built successfully. Run with './$(BIN_DIR)/client'"
+
+# Run commands
+run_server: all
+	@echo "Starting server..."
+	./$(BIN_DIR)/$(TARGET)
+
+run_client: test_client
+	@echo "Starting client..."
+	./$(BIN_DIR)/client
+
+# Run both server and client (server in background)
+run_test: all test_client
+	@echo "Starting server in background and client in foreground..."
+	./$(BIN_DIR)/$(TARGET) & \
+	sleep 1 && \
+	./$(BIN_DIR)/client; \
+	pkill -f $(BIN_DIR)/$(TARGET)
+
 # Clean build artifacts
 clean:
 	rm -rf $(OBJ_DIR) $(BIN_DIR)
 
-.PHONY: all clean
+.PHONY: all clean test_client run_server run_client run_test
