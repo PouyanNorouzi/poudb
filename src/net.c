@@ -50,17 +50,12 @@ int accept_connection(int serverfd) {
     socklen_t          len;
     int                clientfd;
     struct sockaddr_in clientAddress;
-    char               testData[]     = "frick";
-    int                testDataLength = 6;
 
     len      = sizeof(struct sockaddr_in);
     clientfd = accept(serverfd, (struct sockaddr*)&clientAddress, &len);
     if(clientfd == -1) {
         perror("accept");
     }
-    puts("A client connected");
-
-    write(clientfd, &testData, testDataLength);
 
     return clientfd;
 }

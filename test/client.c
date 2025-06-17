@@ -47,16 +47,16 @@ int main(void) {
     printf("Connected to server at %s:%d\n", SERVER_IP, DEFAULT_PORT);
 
     // Receive message from server
-    memset(buffer, 0, BUFFER_SIZE);
-    ssize_t bytes_received = read(clientfd, buffer, BUFFER_SIZE - 1);
+    // memset(buffer, 0, BUFFER_SIZE);
+    // ssize_t bytes_received = read(clientfd, buffer, BUFFER_SIZE - 1);
 
-    if (bytes_received > 0) {
-        printf("Message received from server: %s\n", buffer);
-    } else if (bytes_received == 0) {
-        printf("Server closed the connection\n");
-    } else {
-        perror("Error receiving data");
-    }
+    // if (bytes_received > 0) {
+    //     printf("Message received from server: %s\n", buffer);
+    // } else if (bytes_received == 0) {
+    //     printf("Server closed the connection\n");
+    // } else {
+    //     perror("Error receiving data");
+    // }
 
     // Close connection
     close(clientfd);
