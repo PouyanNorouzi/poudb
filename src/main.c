@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/epoll.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 #include "epoll_manager.h"
@@ -11,10 +12,10 @@
 #include "utils.h"
 
 int main(void) {
-    int serverfd;
-    int epollfd;
-    int res;
-    int i;
+    int  serverfd;
+    int  epollfd;
+    int  res;
+    int  i;
     bool keepRunning;
     // TODO: must make it an array or smth cuz we are going to be accepting
     // multiple connections.
@@ -66,8 +67,16 @@ int main(void) {
                 if(res == 1) {
                     keepRunning = false;
                 }
-            } else if(events[i].data.fd == epollfd) {
-                puts("Someone wants to connect");
+            } else if(events[i].data.fd == serverfd) {
+                puts("smth ready to connect");
+                clientfd = accept_connection(serverfd);
+                add_to_epoll(epollfd, clientfd, EPOLLIN);
+            } else if(events[i].data.fd == clientfd) {
+                res = recieve_data(clientfd);
+                if(res == -1) {
+                    remove_from_epoll(epollfd, clientfd);
+                    close(clientfd);
+                }
             }
         }
     }

@@ -59,3 +59,38 @@ int accept_connection(int serverfd) {
 
     return clientfd;
 }
+
+/**
+ * Handles client communication
+ * @param clientfd The client socket file descriptor
+ * @return 0 on success, -1 on error or client disconnection
+ */
+int recieve_data(int clientfd) {
+    char    buffer[RECIEVE_BUFFER_SIZE];
+    ssize_t bytes_read;
+
+    // Clear the buffer
+    memset(buffer, 0, RECIEVE_BUFFER_SIZE);
+
+    // Read data from client
+    bytes_read = read(clientfd, buffer, RECIEVE_BUFFER_SIZE - 1);
+    if(bytes_read <= 0) {
+        if(bytes_read == 0) {
+            printf("Client disconnected\n");
+        } else {
+            perror("Error reading from client");
+        }
+        return -1;
+    }
+
+    buffer[bytes_read] = '\0';  // Ensure null termination
+    printf("Received from client: %s\n", buffer);
+
+    // Echo back the data to the client
+    if(write(clientfd, buffer, bytes_read) != bytes_read) {
+        perror("Error sending response to client");
+        return -1;
+    }
+
+    return 0;
+}

@@ -16,6 +16,12 @@ int init_epoll(void);
 int add_to_epoll(int epollfd, int fd, uint32_t events);
 
 /**
+ * Removes a file descriptor from an epoll instance.
+ * Returns 0 on success, -1 on error.
+ */
+int remove_from_epoll(int epollfd, int fd);
+
+/**
  * Waits for events on the epoll instance.
  * Returns the number of file descriptors ready for the requested I/O, or -1 on error.
  */
