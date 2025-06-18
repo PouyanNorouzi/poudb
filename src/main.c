@@ -68,7 +68,6 @@ int main(void) {
                     keepRunning = false;
                 }
             } else if(events[i].data.fd == serverfd) {
-                puts("smth ready to connect");
                 clientfd = accept_connection(serverfd);
                 add_to_epoll(epollfd, clientfd, EPOLLIN);
             } else if(events[i].data.fd == clientfd) {
@@ -76,12 +75,18 @@ int main(void) {
                 if(res == -1) {
                     remove_from_epoll(epollfd, clientfd);
                     close(clientfd);
+                    clientfd = -1;
                 }
+            } else {
+                puts("Unknown event occured skipping");
             }
         }
     }
 
     puts("done");
+    if(clientfd != -1) {
+        close(clientfd);
+    }
     close(epollfd);
     close(serverfd);
     return 0;
