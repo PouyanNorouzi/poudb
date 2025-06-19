@@ -7,6 +7,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include "db/parser.h"
 #include "epoll_manager.h"
 #include "net.h"
 #include "utils.h"
@@ -20,6 +21,7 @@ int main(void) {
     // TODO: must make it an array or smth cuz we are going to be accepting
     // multiple connections.
     int                clientfd;
+    char*              data;
     struct epoll_event events[10];
 
     puts("Starting to make the server");
@@ -71,12 +73,14 @@ int main(void) {
                 clientfd = accept_connection(serverfd);
                 add_to_epoll(epollfd, clientfd, EPOLLIN);
             } else if(events[i].data.fd == clientfd) {
-                res = recieve_data(clientfd);
-                if(res == -1) {
+                data = recieve_data(clientfd);
+                if(data == NULL) {
                     remove_from_epoll(epollfd, clientfd);
                     close(clientfd);
                     clientfd = -1;
                 }
+                parse_command(data);
+                free(data);
             } else {
                 puts("Unknown event occured skipping");
             }

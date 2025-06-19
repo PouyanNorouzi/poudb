@@ -2,9 +2,13 @@
 
 #include <netinet/in.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
+#define INITIAL_RECIEVE_BUFFER_SIZE 1024
+#define MAX_RECIEVE_SIZE            65536
 
 /**
  * Creates a socket server and binds it, listening on the given port and returns
@@ -63,34 +67,47 @@ int accept_connection(int serverfd) {
 /**
  * Handles client communication
  * @param clientfd The client socket file descriptor
- * @return 0 on success, -1 on error or client disconnection
+ * @return data on success, NULL on error or client disconnection
  */
-int recieve_data(int clientfd) {
-    char    buffer[RECIEVE_BUFFER_SIZE];
+char* receive_data(int clientfd) {
+    size_t total_size  = INITIAL_RECIEVE_BUFFER_SIZE;
+    size_t bytes_total = 0;
+    char*  buffer      = malloc(total_size);
+    if(!buffer) return NULL;
+
     ssize_t bytes_read;
-
-    // Clear the buffer
-    memset(buffer, 0, RECIEVE_BUFFER_SIZE);
-
-    // Read data from client
-    bytes_read = read(clientfd, buffer, RECIEVE_BUFFER_SIZE - 1);
-    if(bytes_read <= 0) {
-        if(bytes_read == 0) {
-            printf("Client disconnected\n");
-        } else {
-            perror("Error reading from client");
+    while(1) {
+        if(bytes_total >= total_size - 1) {
+            // Grow buffer (double strategy)
+            size_t new_size = total_size * 2;
+            if(new_size > MAX_RECIEVE_SIZE) {
+                fprintf(stderr, "Request too large\n");
+                free(buffer);
+                return NULL;
+            }
+            char* new_buffer = realloc(buffer, new_size);
+            if(!new_buffer) {
+                perror("realloc");
+                free(buffer);
+                return NULL;
+            }
+            buffer     = new_buffer;
+            total_size = new_size;
         }
-        return -1;
+
+        bytes_read =
+            read(clientfd, buffer + bytes_total, total_size - bytes_total - 1);
+        if(bytes_read <= 0) {
+            break;
+        }
+
+        bytes_total         += bytes_read;
+        buffer[bytes_total]  = '\0';  // Null-terminate
+
+        // Check for end of message if protocol defines it (e.g., newline)
+        // if(strchr(buffer, '\n')) break;
     }
 
-    buffer[bytes_read] = '\0';  // Ensure null termination
-    printf("Received from client: %s\n", buffer);
-
-    // Echo back the data to the client
-    if(write(clientfd, buffer, bytes_read) != bytes_read) {
-        perror("Error sending response to client");
-        return -1;
-    }
-
-    return 0;
+    // printf("Received: %s\n", buffer);
+    return buffer;
 }
