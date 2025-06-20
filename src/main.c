@@ -16,7 +16,7 @@ int main(void) {
     int  serverfd, epollfd, res, i;
     bool keepRunning;
     // TODO: must make it an array or smth cuz we want to accept multiple.
-    int        clientfd;
+    int        clientfd = -1;
     char*      data;
     Command*   command;
     EpollEvent events[10];
@@ -70,13 +70,16 @@ int main(void) {
                 clientfd = accept_connection(serverfd);
                 add_to_epoll(epollfd, clientfd, EPOLLIN);
             } else if(events[i].data.fd == clientfd) {
-                data = recieve_data(clientfd);
+                data = receive_data(clientfd);
                 if(data == NULL) {
                     remove_from_epoll(epollfd, clientfd);
                     close(clientfd);
                     clientfd = -1;
                 }
                 command = parse_command(data);
+                if(command != NULL) {
+                    printf("%d\n", command->op);
+                }
                 free(command);
                 free(data);
             } else {

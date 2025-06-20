@@ -7,6 +7,6 @@ int create_server(int port);
 
 int accept_connection(int serverfd);
 
-char* recieve_data(int clientfd);
+char* receive_data(int clientfd);
 
 #endif  // NET_H

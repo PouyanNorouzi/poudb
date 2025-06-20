@@ -2,6 +2,22 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
+
+#define COMMAND_LENGTH 9
+
+/**
+ * Command strings that match Operation enum values
+ */
+static const char* COMMAND_STRINGS[] = {"CREATE",
+                                        "ADD",
+                                        "UP",
+                                        "GET",
+                                        "DEL",
+                                        "GET_ALL",
+                                        "SEARCH",
+                                        "COUNT",
+                                        "CREATE_INDEX"};
 
 /**
  * Function prototypes for private helper functions
@@ -192,6 +208,16 @@ static Command* parse_create_index(const char* input) {
  * Determine which operation the command string contains
  */
 static Operation determine_operation(const char* input) {
-    // Stub - would actually parse the input to determine the operation
-    return OP_CREATE;  // Default placeholder
+    // Skip any leading whitespace
+    while(*input && (*input == ' ' || *input == '\t')) input++;
+
+    // Check each command string
+    for(int i = 0; i < COMMAND_LENGTH; i++) {
+        size_t len = strlen(COMMAND_STRINGS[i]);
+        if(strncasecmp(input, COMMAND_STRINGS[i], len) == 0) {
+            return (Operation)i;
+        }
+    }
+
+    return -1;
 }
