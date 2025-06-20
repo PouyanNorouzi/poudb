@@ -1,5 +1,4 @@
 #include "net.h"
-#include "epoll_manager.h"
 
 #include <netinet/in.h>
 #include <stdio.h>
@@ -111,4 +110,29 @@ char* receive_data(int clientfd) {
 
     // printf("Received: %s\n", buffer);
     return buffer;
+}
+
+/**
+ * Sends data to a client socket
+ * @param clientfd The client socket file descriptor
+ * @param data The data to send
+ * @param len The length of data to send
+ * @return Number of bytes sent on success, -1 on error
+ */
+ssize_t send_data(int clientfd, const char* data, size_t len) {
+    size_t  bytes_sent = 0;
+    ssize_t result;
+
+    while(bytes_sent < len) {
+        result = write(clientfd, data + bytes_sent, len - bytes_sent);
+
+        if(result <= 0) {
+            perror("write");
+            return -1;
+        }
+
+        bytes_sent += result;
+    }
+
+    return bytes_sent;
 }

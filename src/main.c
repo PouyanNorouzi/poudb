@@ -80,6 +80,7 @@ int main(void) {
                 if(command != NULL) {
                     printf("%d\n", command->op);
                 }
+                send_data(clientfd, "yas", 4);
                 free(command);
                 free(data);
             } else {
