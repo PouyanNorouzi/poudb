@@ -52,9 +52,6 @@ int main(void) {
             break; // Exit on EOF
         }
 
-        // Remove trailing newline
-        buffer[strcspn(buffer, "\n")] = 0;
-
         // Send the message to server
         send(clientfd, buffer, strlen(buffer), 0);
 

@@ -1,4 +1,5 @@
 #include "net.h"
+#include "epoll_manager.h"
 
 #include <netinet/in.h>
 #include <stdio.h>
@@ -105,7 +106,7 @@ char* receive_data(int clientfd) {
         buffer[bytes_total]  = '\0';  // Null-terminate
 
         // Check for end of message if protocol defines it (e.g., newline)
-        // if(strchr(buffer, '\n')) break;
+        if(strchr(buffer, '\n')) break;
     }
 
     // printf("Received: %s\n", buffer);
