@@ -79,8 +79,13 @@ int main(void) {
                 command = parse_command(data);
                 if(command != NULL) {
                     printf("%d\n", command->op);
+                    if(command->op == OP_ERROR)
+                        send_data(clientfd,
+                                  command->data.error,
+                                  MAX_ERROR_LENGTH);
+                    else send_data(clientfd, "yas", 4);
                 }
-                send_data(clientfd, "yas", 4);
+
                 free(command);
                 free(data);
             } else {

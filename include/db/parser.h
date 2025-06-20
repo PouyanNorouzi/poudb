@@ -3,20 +3,41 @@
 
 #include "data_model.h"
 
+#define MAX_ERROR_LENGTH 128
+
 /**
  * Enumeration of supported database operations
  */
 typedef enum {
-    OP_CREATE,      /* Create a database */
-    OP_ADD,         /* Add a record to database */
-    OP_UP,          /* Update a record in database */
-    OP_GET,         /* Get a record from database */
-    OP_DEL,         /* Delete a record from database */
-    OP_GET_ALL,     /* Get all records from database */
-    OP_SEARCH,      /* Search records with criteria */
-    OP_COUNT,       /* Count records in database */
-    OP_CREATE_INDEX /* Create an index on database */
+    OP_CREATE,       /* Create a database */
+    OP_ADD,          /* Add a record to database */
+    OP_UP,           /* Update a record in database */
+    OP_GET,          /* Get a record from database */
+    OP_DEL,          /* Delete a record from database */
+    OP_GET_ALL,      /* Get all records from database */
+    OP_SEARCH,       /* Search records with criteria */
+    OP_COUNT,        /* Count records in database */
+    OP_CREATE_INDEX, /* Create an index on database */
+    OP_ERROR         /* When an error has occured when parsing */
 } Operation;
+
+typedef enum {
+    ER_INVALID_COMMAND,       /* Unrecognized command syntax */
+    ER_INVALID_CREATE_FORMAT, /* Invalid format for CREATE command */
+    ER_INVALID_ADD_FORMAT,    /* Invalid format for ADD command */
+    ER_INVALID_UPDATE_FORMAT, /* Invalid format for UPDATE command */
+    ER_INVALID_GET_FORMAT,    /* Invalid format for GET command */
+    ER_INVALID_DELETE_FORMAT, /* Invalid format for DELETE command */
+    ER_INVALID_SEARCH_FORMAT, /* Invalid format for SEARCH command */
+    ER_INVALID_COUNT_FORMAT,  /* Invalid format for COUNT command */
+    ER_INVALID_INDEX_FORMAT,  /* Invalid format for CREATE INDEX command */
+    ER_MISSING_ARGUMENT,      /* Required argument is missing */
+    ER_UNEXPECTED_ARGUMENT,   /* Unexpected extra argument provided */
+    ER_INVALID_IDENTIFIER,    /* Invalid identifier name (db, table, field) */
+    ER_INVALID_DATA_TYPE,     /* Invalid or unsupported data type */
+    ER_SYNTAX_ERROR,          /* General syntax error in command */
+    ER_OTHER /*When the error is about smth else like memory allocation */
+} ParseError;
 
 /**
  * Data structure for OP_CREATE operation
@@ -127,6 +148,7 @@ typedef struct {
         SearchData      search;
         CountData       count;
         CreateIndexData create_index;
+        char            error[MAX_ERROR_LENGTH];
     } data; /* Operation-specific data */
 } Command;
 
