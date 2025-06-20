@@ -4,6 +4,47 @@
 #include <string.h>
 
 /**
+ * Function prototypes for private helper functions
+ */
+static Command* parse_create(const char* input);
+static Command* parse_add(const char* input);
+static Command* parse_up(const char* input);
+static Command* parse_get(const char* input);
+static Command* parse_del(const char* input);
+static Command* parse_get_all(const char* input);
+static Command* parse_search(const char* input);
+static Command* parse_count(const char* input);
+static Command* parse_create_index(const char* input);
+
+static Operation determine_operation(const char* input);
+
+/**
+ * Parse a command string into a Command structure
+ */
+Command* parse_command(const char* input) {
+    if(input == NULL || *input == '\0') {
+        return NULL;
+    }
+
+    // Determine which operation to parse
+    Operation op = determine_operation(input);
+
+    // Call the appropriate parsing function
+    switch(op) {
+        case OP_CREATE:       return parse_create(input);
+        case OP_ADD:          return parse_add(input);
+        case OP_UP:           return parse_up(input);
+        case OP_GET:          return parse_get(input);
+        case OP_DEL:          return parse_del(input);
+        case OP_GET_ALL:      return parse_get_all(input);
+        case OP_SEARCH:       return parse_search(input);
+        case OP_COUNT:        return parse_count(input);
+        case OP_CREATE_INDEX: return parse_create_index(input);
+        default:              return NULL;
+    }
+}
+
+/**
  * Parse a CREATE operation command
  * CREATE <DB> (int smth, string smthElse, ...)
  */
@@ -153,30 +194,4 @@ static Command* parse_create_index(const char* input) {
 static Operation determine_operation(const char* input) {
     // Stub - would actually parse the input to determine the operation
     return OP_CREATE;  // Default placeholder
-}
-
-/**
- * Parse a command string into a Command structure
- */
-Command* parse_command(const char* input) {
-    if(input == NULL || *input == '\0') {
-        return NULL;
-    }
-
-    // Determine which operation to parse
-    Operation op = determine_operation(input);
-
-    // Call the appropriate parsing function
-    switch(op) {
-        case OP_CREATE:       return parse_create(input);
-        case OP_ADD:          return parse_add(input);
-        case OP_UP:           return parse_up(input);
-        case OP_GET:          return parse_get(input);
-        case OP_DEL:          return parse_del(input);
-        case OP_GET_ALL:      return parse_get_all(input);
-        case OP_SEARCH:       return parse_search(input);
-        case OP_COUNT:        return parse_count(input);
-        case OP_CREATE_INDEX: return parse_create_index(input);
-        default:              return NULL;
-    }
 }

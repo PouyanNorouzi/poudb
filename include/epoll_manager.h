@@ -3,6 +3,8 @@
 
 #include <sys/epoll.h>
 
+typedef struct epoll_event EpollEvent ;
+
 /**
  * Creates and initializes an epoll instance.
  * Returns the file descriptor for the epoll instance, or -1 on error.

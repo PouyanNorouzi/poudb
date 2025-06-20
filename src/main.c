@@ -13,16 +13,13 @@
 #include "utils.h"
 
 int main(void) {
-    int  serverfd;
-    int  epollfd;
-    int  res;
-    int  i;
+    int  serverfd, epollfd, res, i;
     bool keepRunning;
-    // TODO: must make it an array or smth cuz we are going to be accepting
-    // multiple connections.
-    int                clientfd;
-    char*              data;
-    struct epoll_event events[10];
+    // TODO: must make it an array or smth cuz we want to accept multiple.
+    int        clientfd;
+    char*      data;
+    Command*   command;
+    EpollEvent events[10];
 
     puts("Starting to make the server");
 
@@ -79,7 +76,8 @@ int main(void) {
                     close(clientfd);
                     clientfd = -1;
                 }
-                parse_command(data);
+                command = parse_command(data);
+                free(command);
                 free(data);
             } else {
                 puts("Unknown event occured skipping");
