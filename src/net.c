@@ -72,7 +72,7 @@ int accept_connection(int serverfd) {
 char* receive_data(int clientfd) {
     size_t total_size  = INITIAL_RECIEVE_BUFFER_SIZE;
     size_t bytes_total = 0;
-    char*  buffer      = malloc(total_size);
+    char*  buffer      = malloc(total_size), *end;
     if(!buffer) return NULL;
 
     ssize_t bytes_read;
@@ -105,9 +105,11 @@ char* receive_data(int clientfd) {
         buffer[bytes_total]  = '\0';  // Null-terminate
 
         // Check for end of message if protocol defines it (e.g., newline)
-        if(strchr(buffer, '\n')) break;
+        end = strchr(buffer, '\n');
+        if(end) break;
     }
 
+    *end = '\0';
     // printf("Received: %s\n", buffer);
     return buffer;
 }
