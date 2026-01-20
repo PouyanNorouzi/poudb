@@ -17,10 +17,19 @@
 int create_server(int port) {
     int                serverfd, res;
     struct sockaddr_in address;
+    int                opt = 1;
 
     serverfd = socket(AF_INET, SOCK_STREAM, 0);
     if(serverfd == -1) {
         perror("socket");
+        return -1;
+    }
+
+    // Set SO_REUSEADDR option to allow immediate reuse of the address
+    if(setsockopt(serverfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) ==
+       -1) {
+        perror("setsockopt");
+        close(serverfd);
         return -1;
     }
 
@@ -72,7 +81,7 @@ int accept_connection(int serverfd) {
 char* receive_data(int clientfd) {
     size_t total_size  = INITIAL_RECIEVE_BUFFER_SIZE;
     size_t bytes_total = 0;
-    char*  buffer      = malloc(total_size), *end;
+    char * buffer      = malloc(total_size), *end;
     if(!buffer) return NULL;
 
     ssize_t bytes_read;

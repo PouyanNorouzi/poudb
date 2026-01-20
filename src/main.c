@@ -78,7 +78,6 @@ int main(void) {
                 }
                 command = parse_command(data);
                 if(command != NULL) {
-                    printf("%d\n", command->op);
                     if(command->op == OP_ERROR)
                         send_data(clientfd,
                                   command->data.error,

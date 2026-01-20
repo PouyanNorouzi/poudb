@@ -1,5 +1,7 @@
 #include "db/parser.h"
 
+#include <ctype.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -7,6 +9,7 @@
 #include <unistd.h>
 
 #define COMMAND_LENGTH 9
+#define TYPE_STR_LENGTH 32
 
 /**
  * Command strings that match Operation enum values
@@ -61,6 +64,10 @@ static Command* parse_error(ParseError errorCode, const char* detail);
 
 static Operation determine_operation(const char* input);
 
+static int parse_field_type(const char* typeStr, FieldType* outType);
+static int is_valid_identifier(const char* str);
+static const char* skip_whitespace(const char* str);
+
 /**
  * Parse a command string into a Command structure
  */
@@ -69,20 +76,30 @@ Command* parse_command(const char* input) {
         return parse_error(ER_INVALID_COMMAND, NULL);
     }
 
+    // Skip leading whitespace
+    while(*input && (*input == ' ' || *input == '\t')) input++;
+
     // Determine which operation to parse
     Operation op = determine_operation(input);
 
-    // Call the appropriate parsing function
+    if(op == OP_ERROR) {
+        return parse_error(ER_INVALID_COMMAND, NULL);
+    }
+
+    // Skip past the command to get the arguments
+    const char* args = input + strlen(COMMAND_STRINGS[op]);
+
+    // Call the appropriate parsing function with just the arguments
     switch(op) {
-        case OP_CREATE:       return parse_create(input);
-        case OP_ADD:          return parse_add(input);
-        case OP_UP:           return parse_up(input);
-        case OP_GET:          return parse_get(input);
-        case OP_DEL:          return parse_del(input);
-        case OP_GET_ALL:      return parse_get_all(input);
-        case OP_SEARCH:       return parse_search(input);
-        case OP_COUNT:        return parse_count(input);
-        case OP_CREATE_INDEX: return parse_create_index(input);
+        case OP_CREATE:       return parse_create(args);
+        case OP_ADD:          return parse_add(args);
+        case OP_UP:           return parse_up(args);
+        case OP_GET:          return parse_get(args);
+        case OP_DEL:          return parse_del(args);
+        case OP_GET_ALL:      return parse_get_all(args);
+        case OP_SEARCH:       return parse_search(args);
+        case OP_COUNT:        return parse_count(args);
+        case OP_CREATE_INDEX: return parse_create_index(args);
         default:              return parse_error(ER_INVALID_COMMAND, NULL);
     }
 }
@@ -98,7 +115,152 @@ static Command* parse_create(const char* input) {
     }
 
     cmd->op = OP_CREATE;
-    // Stub - actual parsing logic would go here
+    cmd->data.create.fields = NULL;
+    cmd->data.create.fieldCount = 0;
+
+    // Skip leading whitespace
+    const char* ptr = skip_whitespace(input);
+
+    // Parse database name
+    if(*ptr == '\0' || *ptr == '(') {
+        free(cmd);
+        return parse_error(ER_MISSING_ARGUMENT, "database name");
+    }
+
+    // Extract database name
+    char dbName[MAX_DB_NAME_LENGTH];
+    int i = 0;
+    while(*ptr && *ptr != ' ' && *ptr != '\t' && *ptr != '(' && i < MAX_DB_NAME_LENGTH - 1) {
+        dbName[i++] = *ptr++;
+    }
+    dbName[i] = '\0';
+
+    if(!is_valid_identifier(dbName)) {
+        free(cmd);
+        return parse_error(ER_INVALID_IDENTIFIER, dbName);
+    }
+
+    strncpy(cmd->data.create.dbName, dbName, MAX_DB_NAME_LENGTH - 1);
+    cmd->data.create.dbName[MAX_DB_NAME_LENGTH - 1] = '\0';
+
+    // Skip whitespace and find opening parenthesis
+    ptr = skip_whitespace(ptr);
+    if(*ptr != '(') {
+        free(cmd);
+        return parse_error(ER_INVALID_CREATE_FORMAT, NULL);
+    }
+    ptr++; // Skip '('
+
+    // Count fields first by counting commas + 1 (if there's content)
+    const char* countPtr = ptr;
+    int fieldCount = 0;
+    int parenDepth = 1;
+    int hasContent = 0;
+
+    while(*countPtr && parenDepth > 0) {
+        if(*countPtr == '(') {
+            parenDepth++;
+        } else if(*countPtr == ')') {
+            parenDepth--;
+        } else if(*countPtr == ',' && parenDepth == 1) {
+            fieldCount++;
+        } else if(!isspace((unsigned char)*countPtr)) {
+            hasContent = 1;
+        }
+        countPtr++;
+    }
+
+    if(parenDepth != 0) {
+        free(cmd);
+        return parse_error(ER_SYNTAX_ERROR, "unmatched parenthesis");
+    }
+
+    if(hasContent) {
+        fieldCount++; // Add 1 for the last field (no trailing comma)
+    }
+
+    if(fieldCount == 0) {
+        free(cmd);
+        return parse_error(ER_MISSING_ARGUMENT, "field definitions");
+    }
+
+    // Allocate fields array
+    Field* fields = (Field*)malloc(sizeof(Field) * fieldCount);
+    if(fields == NULL) {
+        free(cmd);
+        return parse_error(ER_OTHER, "Failed to allocate memory for fields");
+    }
+
+    // Parse each field definition
+    int fieldIndex = 0;
+    while(fieldIndex < fieldCount) {
+        ptr = skip_whitespace(ptr);
+
+        // Parse field type
+        char typeStr[TYPE_STR_LENGTH];
+        i = 0;
+        while(*ptr && *ptr != ' ' && *ptr != '\t' && *ptr != ',' && *ptr != ')' && i < TYPE_STR_LENGTH - 1) {
+            typeStr[i++] = *ptr++;
+        }
+        typeStr[i] = '\0';
+
+        if(typeStr[0] == '\0') {
+            free(fields);
+            free(cmd);
+            return parse_error(ER_MISSING_ARGUMENT, "field type");
+        }
+
+        FieldType fieldType;
+        if(parse_field_type(typeStr, &fieldType) != 0) {
+            free(fields);
+            free(cmd);
+            return parse_error(ER_INVALID_DATA_TYPE, typeStr);
+        }
+
+        ptr = skip_whitespace(ptr);
+
+        // Parse field name
+        char fieldName[MAX_FIELD_NAME_LENGTH];
+        i = 0;
+        while(*ptr && *ptr != ' ' && *ptr != '\t' && *ptr != ',' && *ptr != ')' && i < MAX_FIELD_NAME_LENGTH - 1) {
+            fieldName[i++] = *ptr++;
+        }
+        fieldName[i] = '\0';
+
+        if(fieldName[0] == '\0') {
+            free(fields);
+            free(cmd);
+            return parse_error(ER_MISSING_ARGUMENT, "field name");
+        }
+
+        if(!is_valid_identifier(fieldName)) {
+            free(fields);
+            free(cmd);
+            return parse_error(ER_INVALID_IDENTIFIER, fieldName);
+        }
+
+        // Store the field
+        fields[fieldIndex].type = fieldType;
+        strncpy(fields[fieldIndex].name, fieldName, MAX_FIELD_NAME_LENGTH - 1);
+        fields[fieldIndex].name[MAX_FIELD_NAME_LENGTH - 1] = '\0';
+
+        fieldIndex++;
+
+        // Skip whitespace and find comma or closing paren
+        ptr = skip_whitespace(ptr);
+        if(*ptr == ',') {
+            ptr++; // Skip comma
+        } else if(*ptr == ')') {
+            break; // End of field list
+        } else if(*ptr != '\0') {
+            free(fields);
+            free(cmd);
+            return parse_error(ER_SYNTAX_ERROR, "expected ',' or ')'");
+        }
+    }
+
+    cmd->data.create.fields = fields;
+    cmd->data.create.fieldCount = fieldCount;
 
     return cmd;
 }
@@ -238,9 +400,13 @@ static Operation determine_operation(const char* input) {
     // Skip any leading whitespace
     while(*input && (*input == ' ' || *input == '\t')) input++;
 
+    size_t len_input = strlen(input);
+
     // Check each command string
     for(int i = 0; i < COMMAND_LENGTH; i++) {
-        size_t len = strlen(COMMAND_STRINGS[i]);
+        size_t len_command = strlen(COMMAND_STRINGS[i]);
+        size_t len = len_input > len_command ? len_command : len_input;
+
         if(strncasecmp(input, COMMAND_STRINGS[i], len) == 0) {
             return (Operation)i;
         }
@@ -291,4 +457,54 @@ static Command* parse_error(ParseError errorCode, const char* detail) {
     }
 
     return cmd;
+}
+
+/**
+ * Helper function to parse a field type string into FieldType enum
+ * Returns -1 if the type is invalid
+ */
+static int parse_field_type(const char* typeStr, FieldType* outType) {
+    if(strcasecmp(typeStr, "int") == 0) {
+        *outType = TYPE_INT;
+        return 0;
+    } else if(strcasecmp(typeStr, "double") == 0) {
+        *outType = TYPE_DOUBLE;
+        return 0;
+    } else if(strcasecmp(typeStr, "bool") == 0) {
+        *outType = TYPE_BOOL;
+        return 0;
+    } else if(strcasecmp(typeStr, "string") == 0) {
+        *outType = TYPE_STRING;
+        return 0;
+    }
+    return -1;
+}
+
+/**
+ * Helper function to check if a string is a valid identifier
+ * (starts with letter or underscore, followed by alphanumeric or underscore)
+ */
+static int is_valid_identifier(const char* str) {
+    if(str == NULL || *str == '\0') {
+        return 0;
+    }
+    if(!isalpha((unsigned char)*str) && *str != '_') {
+        return 0;
+    }
+    for(const char* p = str + 1; *p != '\0'; p++) {
+        if(!isalnum((unsigned char)*p) && *p != '_') {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/**
+ * Helper function to skip whitespace
+ */
+static const char* skip_whitespace(const char* str) {
+    while(*str && (*str == ' ' || *str == '\t')) {
+        str++;
+    }
+    return str;
 }
