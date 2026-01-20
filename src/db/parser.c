@@ -8,7 +8,7 @@
 #include <strings.h>
 #include <unistd.h>
 
-#define COMMAND_LENGTH 9
+#define COMMAND_LENGTH  9
 #define TYPE_STR_LENGTH 32
 
 /**
@@ -64,8 +64,8 @@ static Command* parse_error(ParseError errorCode, const char* detail);
 
 static Operation determine_operation(const char* input);
 
-static int parse_field_type(const char* typeStr, FieldType* outType);
-static int is_valid_identifier(const char* str);
+static int         parse_field_type(const char* typeStr, FieldType* outType);
+static int         is_valid_identifier(const char* str);
 static const char* skip_whitespace(const char* str);
 
 /**
@@ -114,8 +114,8 @@ static Command* parse_create(const char* input) {
         return parse_error(ER_OTHER, "Failed to allocate memory");
     }
 
-    cmd->op = OP_CREATE;
-    cmd->data.create.fields = NULL;
+    cmd->op                     = OP_CREATE;
+    cmd->data.create.fields     = NULL;
     cmd->data.create.fieldCount = 0;
 
     // Skip leading whitespace
@@ -129,8 +129,9 @@ static Command* parse_create(const char* input) {
 
     // Extract database name
     char dbName[MAX_DB_NAME_LENGTH];
-    int i = 0;
-    while(*ptr && *ptr != ' ' && *ptr != '\t' && *ptr != '(' && i < MAX_DB_NAME_LENGTH - 1) {
+    int  i = 0;
+    while(*ptr && *ptr != ' ' && *ptr != '\t' && *ptr != '(' &&
+          i < MAX_DB_NAME_LENGTH - 1) {
         dbName[i++] = *ptr++;
     }
     dbName[i] = '\0';
@@ -149,13 +150,13 @@ static Command* parse_create(const char* input) {
         free(cmd);
         return parse_error(ER_INVALID_CREATE_FORMAT, NULL);
     }
-    ptr++; // Skip '('
+    ptr++;  // Skip '('
 
     // Count fields first by counting commas + 1 (if there's content)
-    const char* countPtr = ptr;
-    int fieldCount = 0;
-    int parenDepth = 1;
-    int hasContent = 0;
+    const char* countPtr   = ptr;
+    int         fieldCount = 0;
+    int         parenDepth = 1;
+    int         hasContent = 0;
 
     while(*countPtr && parenDepth > 0) {
         if(*countPtr == '(') {
@@ -176,7 +177,7 @@ static Command* parse_create(const char* input) {
     }
 
     if(hasContent) {
-        fieldCount++; // Add 1 for the last field (no trailing comma)
+        fieldCount++;  // Add 1 for the last field (no trailing comma)
     }
 
     if(fieldCount == 0) {
@@ -199,7 +200,8 @@ static Command* parse_create(const char* input) {
         // Parse field type
         char typeStr[TYPE_STR_LENGTH];
         i = 0;
-        while(*ptr && *ptr != ' ' && *ptr != '\t' && *ptr != ',' && *ptr != ')' && i < TYPE_STR_LENGTH - 1) {
+        while(*ptr && *ptr != ' ' && *ptr != '\t' && *ptr != ',' &&
+              *ptr != ')' && i < TYPE_STR_LENGTH - 1) {
             typeStr[i++] = *ptr++;
         }
         typeStr[i] = '\0';
@@ -222,7 +224,8 @@ static Command* parse_create(const char* input) {
         // Parse field name
         char fieldName[MAX_FIELD_NAME_LENGTH];
         i = 0;
-        while(*ptr && *ptr != ' ' && *ptr != '\t' && *ptr != ',' && *ptr != ')' && i < MAX_FIELD_NAME_LENGTH - 1) {
+        while(*ptr && *ptr != ' ' && *ptr != '\t' && *ptr != ',' &&
+              *ptr != ')' && i < MAX_FIELD_NAME_LENGTH - 1) {
             fieldName[i++] = *ptr++;
         }
         fieldName[i] = '\0';
@@ -249,9 +252,9 @@ static Command* parse_create(const char* input) {
         // Skip whitespace and find comma or closing paren
         ptr = skip_whitespace(ptr);
         if(*ptr == ',') {
-            ptr++; // Skip comma
+            ptr++;  // Skip comma
         } else if(*ptr == ')') {
-            break; // End of field list
+            break;  // End of field list
         } else if(*ptr != '\0') {
             free(fields);
             free(cmd);
@@ -259,7 +262,7 @@ static Command* parse_create(const char* input) {
         }
     }
 
-    cmd->data.create.fields = fields;
+    cmd->data.create.fields     = fields;
     cmd->data.create.fieldCount = fieldCount;
 
     return cmd;
@@ -405,7 +408,7 @@ static Operation determine_operation(const char* input) {
     // Check each command string
     for(int i = 0; i < COMMAND_LENGTH; i++) {
         size_t len_command = strlen(COMMAND_STRINGS[i]);
-        size_t len = len_input > len_command ? len_command : len_input;
+        size_t len         = len_input > len_command ? len_command : len_input;
 
         if(strncasecmp(input, COMMAND_STRINGS[i], len) == 0) {
             return (Operation)i;

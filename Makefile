@@ -9,6 +9,7 @@ BIN_DIR = bin
 
 # Test Settings
 TEST_DIR = test
+TEST_LDFLAGS = -lcriterion
 
 # Source and Object Files
 SRCS := $(wildcard $(SRC_DIR)/*.c) $(wildcard $(SRC_DIR)/db/*.c)
@@ -40,6 +41,18 @@ $(BIN_DIR)/client: $(TEST_DIR)/client.c | $(BIN_DIR)
 	$(CC) $(CFLAGS) $< -o $@
 	@echo "Test client built successfully. Run with './$(BIN_DIR)/client'"
 
+# Unit test targets (Criterion)
+# Filter out main.o to avoid duplicate main symbol
+TEST_OBJS := $(filter-out $(OBJ_DIR)/main.o, $(OBJS))
+
+test: $(BIN_DIR)/test_parser
+	@echo "Running parser tests..."
+	./$(BIN_DIR)/test_parser
+
+$(BIN_DIR)/test_parser: $(TEST_DIR)/test_parser.c $(TEST_OBJS) | $(BIN_DIR)
+	$(CC) $(CFLAGS) $< $(TEST_OBJS) $(TEST_LDFLAGS) -o $@
+	@echo "Parser tests built successfully."
+
 # Run commands
 run_server: all
 	@echo "Starting server..."
@@ -61,4 +74,4 @@ run_test: all test_client
 clean:
 	rm -rf $(OBJ_DIR) $(BIN_DIR)
 
-.PHONY: all clean test_client run_server run_client run_test
+.PHONY: all clean test test_client run_server run_client run_test
