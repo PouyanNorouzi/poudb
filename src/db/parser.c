@@ -88,7 +88,9 @@ static int  tokenize_update_values(const char* values_str,
                                    int*        value_count);
 static int  parse_single_value(const char** ptr, Data* out_value);
 static int  parse_single_field(const char** ptr, Field* out_field);
-static int  parse_update_value(const char** ptr, Data* out_value, int* is_ignored);
+static int  parse_update_value(const char** ptr,
+                               Data*        out_value,
+                               int*         is_ignored);
 static void free_values_array(Data* values, int count);
 static void free_fields_array(Field* fields, int count);
 
@@ -390,11 +392,11 @@ static Command* parse_up(const char* args) {
         return parse_error(ER_OTHER, "Failed to allocate memory");
     }
 
-    cmd->op                     = OP_UP;
-    cmd->data.update.values     = NULL;
-    cmd->data.update.valueCount = 0;
+    cmd->op                      = OP_UP;
+    cmd->data.update.values      = NULL;
+    cmd->data.update.valueCount  = 0;
     cmd->data.update.ignoreFlags = NULL;
-    cmd->data.update.key        = 0;
+    cmd->data.update.key         = 0;
 
     // Step 1: Split input at parenthesis into two parts
     char* before_paren = NULL;
@@ -470,12 +472,16 @@ static Command* parse_up(const char* args) {
     free(key_str);
     free(before_paren);
 
-    // Step 4: Tokenize values from inside parentheses (with ignore flag support)
+    // Step 4: Tokenize values from inside parentheses (with ignore flag
+    // support)
     Data* values      = NULL;
     int*  ignoreFlags = NULL;
     int   valueCount  = 0;
 
-    int values_result = tokenize_update_values(inside_paren, &values, &ignoreFlags, &valueCount);
+    int values_result = tokenize_update_values(inside_paren,
+                                               &values,
+                                               &ignoreFlags,
+                                               &valueCount);
     free(inside_paren);
 
     if(values_result == -1) {
@@ -517,19 +523,238 @@ static Command* parse_up(const char* args) {
 /**
  * Parse a GET operation command
  * GET <DB> <KEY> (<FIELDS>)
+ * Fields are optional - if omitted or empty parens, returns all fields
  */
-static Command* parse_get(const char* input) {
+static Command* parse_get(const char* args) {
     Command* cmd = (Command*)malloc(sizeof(Command));
     if(cmd == NULL) {
         return parse_error(ER_OTHER, "Failed to allocate memory");
     }
 
-    cmd->op = OP_GET;
-    // Stub - actual parsing logic would go here
+    cmd->op                  = OP_GET;
+    cmd->data.get.fields     = NULL;
+    cmd->data.get.fieldCount = 0;
+    cmd->data.get.key        = 0;
+
+    // Check if there are parentheses (optional fields)
+    const char* paren = strchr(args, '(');
+
+    if(paren != NULL) {
+        // Has field specification - split at parenthesis
+        char* before_paren = NULL;
+        char* inside_paren = NULL;
+
+        int split_result = split_at_paren(args, &before_paren, &inside_paren);
+        if(split_result == -1) {
+            free(cmd);
+            return parse_error(ER_SYNTAX_ERROR, "unmatched parenthesis");
+        }
+        if(split_result == -2) {
+            free(cmd);
+            return parse_error(ER_OTHER, "Failed to allocate memory");
+        }
+
+        // Tokenize db_name and key from before parenthesis
+        char* db_name = NULL;
+        char* key_str = NULL;
+
+        int token_result = tokenize_args(before_paren, &db_name, &key_str);
+        if(token_result == -1) {
+            free(before_paren);
+            free(inside_paren);
+            free(cmd);
+            return parse_error(ER_MISSING_ARGUMENT, "database name");
+        }
+        if(token_result == -2) {
+            free(db_name);
+            free(before_paren);
+            free(inside_paren);
+            free(cmd);
+            return parse_error(ER_MISSING_ARGUMENT, "key");
+        }
+        if(token_result == -3) {
+            free(db_name);
+            free(key_str);
+            free(before_paren);
+            free(inside_paren);
+            free(cmd);
+            return parse_error(ER_OTHER, "Failed to allocate memory");
+        }
+
+        // Validate database name
+        if(!is_valid_identifier(db_name)) {
+            char* invalid_name = db_name;
+            free(key_str);
+            free(before_paren);
+            free(inside_paren);
+            free(cmd);
+            Command* err = parse_error(ER_INVALID_IDENTIFIER, invalid_name);
+            free(invalid_name);
+            return err;
+        }
+
+        strncpy(cmd->data.get.dbName, db_name, MAX_DB_NAME_LENGTH - 1);
+        cmd->data.get.dbName[MAX_DB_NAME_LENGTH - 1] = '\0';
+        free(db_name);
+
+        // Validate and parse key
+        const char* key_ptr = key_str;
+        if(!parse_int(&key_ptr, &cmd->data.get.key) || *key_ptr != '\0') {
+            free(key_str);
+            free(before_paren);
+            free(inside_paren);
+            free(cmd);
+            return parse_error(ER_SYNTAX_ERROR, "key must be an integer");
+        }
+        free(key_str);
+        free(before_paren);
+
+        // Parse field names from inside parentheses (if not empty)
+        const char* field_ptr = skip_whitespace(inside_paren);
+        if(*field_ptr != '\0') {
+            // Count fields
+            int         field_count = 1;
+            const char* p           = field_ptr;
+            while(*p) {
+                if(*p == ',') field_count++;
+                p++;
+            }
+
+            // Allocate field array
+            cmd->data.get.fields = (char**)malloc(sizeof(char*) * field_count);
+            if(cmd->data.get.fields == NULL) {
+                free(inside_paren);
+                free(cmd);
+                return parse_error(ER_OTHER, "Failed to allocate memory");
+            }
+
+            // Parse each field name
+            p = field_ptr;
+            for(int i = 0; i < field_count; i++) {
+                p                 = skip_whitespace(p);
+                const char* start = p;
+                while(*p && *p != ',' && !isspace((unsigned char)*p)) {
+                    p++;
+                }
+
+                size_t len = p - start;
+                if(len == 0) {
+                    // Free already allocated fields
+                    for(int j = 0; j < i; j++) {
+                        free(cmd->data.get.fields[j]);
+                    }
+                    free(cmd->data.get.fields);
+                    free(inside_paren);
+                    free(cmd);
+                    return parse_error(ER_MISSING_ARGUMENT, "field name");
+                }
+
+                cmd->data.get.fields[i] = (char*)malloc(len + 1);
+                if(cmd->data.get.fields[i] == NULL) {
+                    for(int j = 0; j < i; j++) {
+                        free(cmd->data.get.fields[j]);
+                    }
+                    free(cmd->data.get.fields);
+                    free(inside_paren);
+                    free(cmd);
+                    return parse_error(ER_OTHER, "Failed to allocate memory");
+                }
+                strncpy(cmd->data.get.fields[i], start, len);
+                cmd->data.get.fields[i][len] = '\0';
+
+                // Validate field name
+                if(!is_valid_identifier(cmd->data.get.fields[i])) {
+                    for(int j = 0; j <= i; j++) {
+                        free(cmd->data.get.fields[j]);
+                    }
+                    free(cmd->data.get.fields);
+                    free(inside_paren);
+                    free(cmd);
+                    return parse_error(ER_INVALID_IDENTIFIER,
+                                       "invalid field name");
+                }
+
+                p = skip_whitespace(p);
+                if(*p == ',') p++;
+            }
+
+            cmd->data.get.fieldCount = field_count;
+        }
+
+        free(inside_paren);
+    } else {
+        // No opening parenthesis - check for closing parenthesis (syntax error)
+        if(strchr(args, ')') != NULL) {
+            free(cmd);
+            return parse_error(ER_SYNTAX_ERROR, "unmatched parenthesis");
+        }
+
+        // No parentheses - just parse db_name and key
+        char* db_name = NULL;
+        char* key_str = NULL;
+
+        int token_result = tokenize_args(args, &db_name, &key_str);
+        if(token_result == -1) {
+            free(cmd);
+            return parse_error(ER_MISSING_ARGUMENT, "database name");
+        }
+        if(token_result == -2) {
+            free(db_name);
+            free(cmd);
+            return parse_error(ER_MISSING_ARGUMENT, "key");
+        }
+        if(token_result == -3) {
+            free(db_name);
+            free(key_str);
+            free(cmd);
+            return parse_error(ER_OTHER, "Failed to allocate memory");
+        }
+
+        // Validate database name
+        if(!is_valid_identifier(db_name)) {
+            char* invalid_name = db_name;
+            free(key_str);
+            free(cmd);
+            Command* err = parse_error(ER_INVALID_IDENTIFIER, invalid_name);
+            free(invalid_name);
+            return err;
+        }
+
+        strncpy(cmd->data.get.dbName, db_name, MAX_DB_NAME_LENGTH - 1);
+        cmd->data.get.dbName[MAX_DB_NAME_LENGTH - 1] = '\0';
+        free(db_name);
+
+        // Validate and parse key
+        const char* key_ptr = key_str;
+        if(!parse_int(&key_ptr, &cmd->data.get.key) || *key_ptr != '\0') {
+            free(key_str);
+            free(cmd);
+            return parse_error(ER_SYNTAX_ERROR, "key must be an integer");
+        }
+        free(key_str);
+
+        // Check for extra arguments after key (should be none)
+        const char* after_key = skip_whitespace(args);
+        // Skip db_name
+        while(*after_key && !isspace((unsigned char)*after_key)) after_key++;
+        after_key = skip_whitespace(after_key);
+        // Skip key
+        while(*after_key && !isspace((unsigned char)*after_key)) after_key++;
+        after_key = skip_whitespace(after_key);
+
+        if(*after_key != '\0') {
+            free(cmd);
+            return parse_error(ER_SYNTAX_ERROR,
+                               "unexpected arguments after key");
+        }
+
+        // No fields specified - will return all fields
+        cmd->data.get.fields     = NULL;
+        cmd->data.get.fieldCount = 0;
+    }
 
     return cmd;
 }
-
 /**
  * Parse a DEL (delete) operation command
  * DEL <DB> <KEY>
@@ -905,8 +1130,9 @@ static int parse_single_field(const char** ptr, Field* out_field) {
 
     // Store the field
     out_field->type = fieldType;
-    strncpy(out_field->name, fieldName, MAX_FIELD_NAME_LENGTH - 1);
-    out_field->name[MAX_FIELD_NAME_LENGTH - 1] = '\0';
+    // fieldName is already null-terminated, safe to copy
+    size_t len = strlen(fieldName);
+    memcpy(out_field->name, fieldName, len + 1);  // +1 for null terminator
 
     *ptr = p;
     return 0;
@@ -1163,7 +1389,9 @@ static int tokenize_values(const char* values_str,
  * Sets is_ignored to 1 if the value is '_' (ignore marker)
  * Advances ptr past the parsed value
  */
-static int parse_update_value(const char** ptr, Data* out_value, int* is_ignored) {
+static int parse_update_value(const char** ptr,
+                              Data*        out_value,
+                              int*         is_ignored) {
     const char* p = skip_whitespace(*ptr);
 
     out_value->size    = 0;
@@ -1171,26 +1399,23 @@ static int parse_update_value(const char** ptr, Data* out_value, int* is_ignored
     *is_ignored        = 0;
 
     // Check for ignore marker '_'
-    if(*p == '_' &&
-       (p[1] == ',' || p[1] == ')' || isspace((unsigned char)p[1]) || p[1] == '\0')) {
+    if(*p == '_' && (p[1] == ',' || p[1] == ')' ||
+                     isspace((unsigned char)p[1]) || p[1] == '\0')) {
         *is_ignored = 1;
-        *ptr = p + 1;
+        *ptr        = p + 1;
         return 0;
     }
 
     // Otherwise, parse as a regular value
     int result = parse_single_value(&p, out_value);
-    *ptr = p;
+    *ptr       = p;
     return result;
 }
 
 /**
- * Tokenize update values from inside parentheses string with ignore flag support
- * Returns 0 on success, negative on error:
- *   -1 for memory allocation failure
- *   -2 for empty values
- *   -3 for unterminated string
- *   -4 for invalid double
+ * Tokenize update values from inside parentheses string with ignore flag
+ * support Returns 0 on success, negative on error: -1 for memory allocation
+ * failure -2 for empty values -3 for unterminated string -4 for invalid double
  *   -5 for invalid integer
  *   -6 for invalid value
  *   -7 for syntax error (expected ',' or end)
@@ -1258,7 +1483,9 @@ static int tokenize_update_values(const char* values_str,
     while(valueIndex < count) {
         ptr = skip_whitespace(ptr);
 
-        int result = parse_update_value(&ptr, &(*values)[valueIndex], &(*ignore_flags)[valueIndex]);
+        int result = parse_update_value(&ptr,
+                                        &(*values)[valueIndex],
+                                        &(*ignore_flags)[valueIndex]);
         if(result != 0) {
             free_values_array(*values, valueIndex);
             *values = NULL;
