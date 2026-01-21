@@ -1779,15 +1779,17 @@ static int tokenize_args(const char* args_str, char** db_name, char** key_str) {
 
 /**
  * Free a values array and all allocated strings within it
+ * Parser uses: size = -2 for int, -1 for double, 0 for bool, >= 0 for string
+ * Note: size = 0 can be both bool and empty string, but bools have value.s = NULL
  */
 static void free_values_array(Data* values, int count) {
     if(values == NULL) return;
     for(int v = 0; v < count; v++) {
-        if(values[v].size > 0 && values[v].value.s != NULL) {
+        // Free strings: size >= 0 and value.s is not NULL
+        if(values[v].size >= 0 && values[v].value.s != NULL) {
             free((void*)values[v].value.s);
         }
     }
-    free(values);
 }
 
 /**

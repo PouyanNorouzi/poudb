@@ -7,15 +7,6 @@
  * Test suite for parse_create function
  */
 
-// Helper function to free command memory
-static void free_command(Command* cmd) {
-    if(cmd == NULL) return;
-    if(cmd->op == OP_CREATE && cmd->data.create.fields != NULL) {
-        free(cmd->data.create.fields);
-    }
-    free(cmd);
-}
-
 // ============================================================================
 // Valid CREATE command tests
 // ============================================================================
@@ -30,7 +21,7 @@ Test(parse_create, single_int_field) {
     cr_assert_str_eq(cmd->data.create.fields[0].name, "id");
     cr_assert_eq(cmd->data.create.fields[0].type, TYPE_INT);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create, single_string_field) {
@@ -43,7 +34,7 @@ Test(parse_create, single_string_field) {
     cr_assert_str_eq(cmd->data.create.fields[0].name, "name");
     cr_assert_eq(cmd->data.create.fields[0].type, TYPE_STRING);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create, single_double_field) {
@@ -56,7 +47,7 @@ Test(parse_create, single_double_field) {
     cr_assert_str_eq(cmd->data.create.fields[0].name, "amount");
     cr_assert_eq(cmd->data.create.fields[0].type, TYPE_DOUBLE);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create, single_bool_field) {
@@ -69,7 +60,7 @@ Test(parse_create, single_bool_field) {
     cr_assert_str_eq(cmd->data.create.fields[0].name, "active");
     cr_assert_eq(cmd->data.create.fields[0].type, TYPE_BOOL);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create, multiple_fields) {
@@ -93,7 +84,7 @@ Test(parse_create, multiple_fields) {
     cr_assert_str_eq(cmd->data.create.fields[3].name, "active");
     cr_assert_eq(cmd->data.create.fields[3].type, TYPE_BOOL);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create, case_insensitive_command) {
@@ -103,7 +94,7 @@ Test(parse_create, case_insensitive_command) {
     cr_assert_eq(cmd->op, OP_CREATE);
     cr_assert_str_eq(cmd->data.create.dbName, "mydb");
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create, case_insensitive_types) {
@@ -118,7 +109,7 @@ Test(parse_create, case_insensitive_types) {
     cr_assert_eq(cmd->data.create.fields[2].type, TYPE_DOUBLE);
     cr_assert_eq(cmd->data.create.fields[3].type, TYPE_BOOL);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create, extra_whitespace) {
@@ -130,7 +121,7 @@ Test(parse_create, extra_whitespace) {
     cr_assert_str_eq(cmd->data.create.dbName, "mydb");
     cr_assert_eq(cmd->data.create.fieldCount, 2);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create, underscore_in_names) {
@@ -143,7 +134,7 @@ Test(parse_create, underscore_in_names) {
     cr_assert_str_eq(cmd->data.create.fields[0].name, "user_id");
     cr_assert_str_eq(cmd->data.create.fields[1].name, "first_name");
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create, db_name_starts_with_underscore) {
@@ -153,7 +144,7 @@ Test(parse_create, db_name_starts_with_underscore) {
     cr_assert_eq(cmd->op, OP_CREATE);
     cr_assert_str_eq(cmd->data.create.dbName, "_private");
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 // ============================================================================
@@ -166,7 +157,7 @@ Test(parse_create, missing_db_name) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create, missing_parentheses) {
@@ -175,7 +166,7 @@ Test(parse_create, missing_parentheses) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create, empty_field_list) {
@@ -184,7 +175,7 @@ Test(parse_create, empty_field_list) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create, missing_field_name) {
@@ -193,7 +184,7 @@ Test(parse_create, missing_field_name) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create, missing_field_type) {
@@ -202,7 +193,7 @@ Test(parse_create, missing_field_type) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create, invalid_field_type) {
@@ -211,7 +202,7 @@ Test(parse_create, invalid_field_type) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create, invalid_db_name_starts_with_number) {
@@ -220,7 +211,7 @@ Test(parse_create, invalid_db_name_starts_with_number) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create, invalid_field_name_starts_with_number) {
@@ -229,7 +220,7 @@ Test(parse_create, invalid_field_name_starts_with_number) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create, unmatched_opening_paren) {
@@ -238,7 +229,7 @@ Test(parse_create, unmatched_opening_paren) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create, invalid_db_name_with_special_chars) {
@@ -247,7 +238,7 @@ Test(parse_create, invalid_db_name_with_special_chars) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create, invalid_field_name_with_special_chars) {
@@ -256,7 +247,7 @@ Test(parse_create, invalid_field_name_with_special_chars) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create, null_input) {
@@ -265,7 +256,7 @@ Test(parse_create, null_input) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create, empty_input) {
@@ -274,7 +265,7 @@ Test(parse_create, empty_input) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create, only_whitespace) {
@@ -283,7 +274,7 @@ Test(parse_create, only_whitespace) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create, invalid_command) {
@@ -292,7 +283,7 @@ Test(parse_create, invalid_command) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 // ============================================================================
@@ -519,7 +510,7 @@ Test(parse_add, missing_db_name) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_add, missing_key) {
@@ -528,7 +519,7 @@ Test(parse_add, missing_key) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_add, missing_values) {
@@ -537,7 +528,7 @@ Test(parse_add, missing_values) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_add, empty_values) {
@@ -546,7 +537,7 @@ Test(parse_add, empty_values) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_add, invalid_db_name) {
@@ -555,7 +546,7 @@ Test(parse_add, invalid_db_name) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_add, invalid_key_not_integer) {
@@ -564,7 +555,7 @@ Test(parse_add, invalid_key_not_integer) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_add, unmatched_parenthesis) {
@@ -573,7 +564,7 @@ Test(parse_add, unmatched_parenthesis) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_add, unterminated_string) {
@@ -582,7 +573,7 @@ Test(parse_add, unterminated_string) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_add, invalid_value) {
@@ -591,7 +582,7 @@ Test(parse_add, invalid_value) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_add, missing_comma_between_values) {
@@ -600,7 +591,7 @@ Test(parse_add, missing_comma_between_values) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_add, invalid_db_name_special_chars) {
@@ -609,7 +600,7 @@ Test(parse_add, invalid_db_name_special_chars) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 // ============================================================================
@@ -867,7 +858,7 @@ Test(parse_up, missing_db_name) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_up, missing_key) {
@@ -876,7 +867,7 @@ Test(parse_up, missing_key) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_up, missing_values) {
@@ -885,7 +876,7 @@ Test(parse_up, missing_values) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_up, empty_values) {
@@ -894,7 +885,7 @@ Test(parse_up, empty_values) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_up, invalid_db_name) {
@@ -903,7 +894,7 @@ Test(parse_up, invalid_db_name) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_up, invalid_key_not_integer) {
@@ -912,7 +903,7 @@ Test(parse_up, invalid_key_not_integer) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_up, auto_key_not_allowed) {
@@ -921,7 +912,7 @@ Test(parse_up, auto_key_not_allowed) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_up, unmatched_parenthesis) {
@@ -930,7 +921,7 @@ Test(parse_up, unmatched_parenthesis) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_up, unterminated_string) {
@@ -939,7 +930,7 @@ Test(parse_up, unterminated_string) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_up, invalid_value) {
@@ -948,7 +939,7 @@ Test(parse_up, invalid_value) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_up, missing_comma_between_values) {
@@ -957,7 +948,7 @@ Test(parse_up, missing_comma_between_values) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_up, invalid_db_name_special_chars) {
@@ -966,7 +957,7 @@ Test(parse_up, invalid_db_name_special_chars) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 // ============================================================================
@@ -1166,7 +1157,7 @@ Test(parse_get, missing_db_name) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_get, missing_key) {
@@ -1175,7 +1166,7 @@ Test(parse_get, missing_key) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_get, invalid_db_name_starts_with_number) {
@@ -1184,7 +1175,7 @@ Test(parse_get, invalid_db_name_starts_with_number) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_get, invalid_db_name_special_chars) {
@@ -1193,7 +1184,7 @@ Test(parse_get, invalid_db_name_special_chars) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_get, invalid_key_not_integer) {
@@ -1202,7 +1193,7 @@ Test(parse_get, invalid_key_not_integer) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_get, invalid_key_with_auto_marker) {
@@ -1211,7 +1202,7 @@ Test(parse_get, invalid_key_with_auto_marker) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_get, invalid_field_name_starts_with_number) {
@@ -1220,7 +1211,7 @@ Test(parse_get, invalid_field_name_starts_with_number) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_get, invalid_field_name_special_chars) {
@@ -1229,7 +1220,7 @@ Test(parse_get, invalid_field_name_special_chars) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_get, unmatched_opening_paren) {
@@ -1238,7 +1229,7 @@ Test(parse_get, unmatched_opening_paren) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_get, unmatched_closing_paren) {
@@ -1247,7 +1238,7 @@ Test(parse_get, unmatched_closing_paren) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_get, empty_field_name) {
@@ -1256,7 +1247,7 @@ Test(parse_get, empty_field_name) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_get, trailing_comma) {
@@ -1265,7 +1256,7 @@ Test(parse_get, trailing_comma) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 // ============================================================================
@@ -1284,7 +1275,7 @@ Test(parse_del, basic_delete) {
     cr_assert_str_eq(cmd->data.delete.dbName, "mydb");
     cr_assert_eq(cmd->data.delete.key, 1);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_del, zero_key) {
@@ -1295,7 +1286,7 @@ Test(parse_del, zero_key) {
     cr_assert_str_eq(cmd->data.delete.dbName, "mydb");
     cr_assert_eq(cmd->data.delete.key, 0);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_del, negative_key) {
@@ -1306,7 +1297,7 @@ Test(parse_del, negative_key) {
     cr_assert_str_eq(cmd->data.delete.dbName, "mydb");
     cr_assert_eq(cmd->data.delete.key, -5);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_del, large_key) {
@@ -1316,7 +1307,7 @@ Test(parse_del, large_key) {
     cr_assert_eq(cmd->op, OP_DEL);
     cr_assert_eq(cmd->data.delete.key, 999999);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_del, db_name_with_underscore) {
@@ -1326,7 +1317,7 @@ Test(parse_del, db_name_with_underscore) {
     cr_assert_eq(cmd->op, OP_DEL);
     cr_assert_str_eq(cmd->data.delete.dbName, "my_database");
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_del, db_name_starts_with_underscore) {
@@ -1336,7 +1327,7 @@ Test(parse_del, db_name_starts_with_underscore) {
     cr_assert_eq(cmd->op, OP_DEL);
     cr_assert_str_eq(cmd->data.delete.dbName, "_private");
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_del, case_insensitive_command) {
@@ -1346,7 +1337,7 @@ Test(parse_del, case_insensitive_command) {
     cr_assert_eq(cmd->op, OP_DEL);
     cr_assert_str_eq(cmd->data.delete.dbName, "mydb");
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_del, extra_whitespace) {
@@ -1357,7 +1348,7 @@ Test(parse_del, extra_whitespace) {
     cr_assert_str_eq(cmd->data.delete.dbName, "mydb");
     cr_assert_eq(cmd->data.delete.key, 10);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 // ============================================================================
@@ -1370,7 +1361,7 @@ Test(parse_del, missing_db_name) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_del, missing_key) {
@@ -1379,7 +1370,7 @@ Test(parse_del, missing_key) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_del, invalid_db_name_starts_with_number) {
@@ -1388,7 +1379,7 @@ Test(parse_del, invalid_db_name_starts_with_number) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_del, invalid_db_name_special_chars) {
@@ -1397,7 +1388,7 @@ Test(parse_del, invalid_db_name_special_chars) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_del, invalid_key_not_integer) {
@@ -1406,7 +1397,7 @@ Test(parse_del, invalid_key_not_integer) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_del, invalid_key_with_auto_marker) {
@@ -1415,7 +1406,7 @@ Test(parse_del, invalid_key_with_auto_marker) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_del, extra_arguments) {
@@ -1424,7 +1415,7 @@ Test(parse_del, extra_arguments) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_del, unexpected_parenthesis) {
@@ -1433,7 +1424,7 @@ Test(parse_del, unexpected_parenthesis) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 // ============================================================================
@@ -1596,7 +1587,7 @@ Test(parse_get_all, missing_db_name) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_get_all, invalid_db_name_starts_with_number) {
@@ -1605,7 +1596,7 @@ Test(parse_get_all, invalid_db_name_starts_with_number) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_get_all, invalid_db_name_special_chars) {
@@ -1614,7 +1605,7 @@ Test(parse_get_all, invalid_db_name_special_chars) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_get_all, invalid_field_name_starts_with_number) {
@@ -1623,7 +1614,7 @@ Test(parse_get_all, invalid_field_name_starts_with_number) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_get_all, invalid_field_name_special_chars) {
@@ -1632,7 +1623,7 @@ Test(parse_get_all, invalid_field_name_special_chars) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_get_all, unmatched_opening_paren) {
@@ -1641,7 +1632,7 @@ Test(parse_get_all, unmatched_opening_paren) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_get_all, unmatched_closing_paren) {
@@ -1650,7 +1641,7 @@ Test(parse_get_all, unmatched_closing_paren) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_get_all, empty_field_name) {
@@ -1659,7 +1650,7 @@ Test(parse_get_all, empty_field_name) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_get_all, trailing_comma) {
@@ -1668,7 +1659,7 @@ Test(parse_get_all, trailing_comma) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_get_all, extra_arguments) {
@@ -1677,7 +1668,7 @@ Test(parse_get_all, extra_arguments) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 // ============================================================================
@@ -1907,7 +1898,7 @@ Test(parse_search, missing_db_name) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_search, missing_field_name) {
@@ -1916,7 +1907,7 @@ Test(parse_search, missing_field_name) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_search, missing_value) {
@@ -1925,7 +1916,7 @@ Test(parse_search, missing_value) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_search, invalid_db_name) {
@@ -1934,7 +1925,7 @@ Test(parse_search, invalid_db_name) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_search, invalid_field_name) {
@@ -1943,7 +1934,7 @@ Test(parse_search, invalid_field_name) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_search, invalid_db_name_special_chars) {
@@ -1952,7 +1943,7 @@ Test(parse_search, invalid_db_name_special_chars) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_search, invalid_field_name_special_chars) {
@@ -1961,7 +1952,7 @@ Test(parse_search, invalid_field_name_special_chars) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_search, unterminated_string) {
@@ -1970,7 +1961,7 @@ Test(parse_search, unterminated_string) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_search, invalid_return_field) {
@@ -1979,7 +1970,7 @@ Test(parse_search, invalid_return_field) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_search, unmatched_opening_paren) {
@@ -1988,7 +1979,7 @@ Test(parse_search, unmatched_opening_paren) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_search, unmatched_closing_paren) {
@@ -1997,7 +1988,7 @@ Test(parse_search, unmatched_closing_paren) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_search, empty_return_field_name) {
@@ -2006,7 +1997,7 @@ Test(parse_search, empty_return_field_name) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_search, trailing_comma) {
@@ -2015,7 +2006,7 @@ Test(parse_search, trailing_comma) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 // ============================================================================
@@ -2033,7 +2024,7 @@ Test(parse_count, basic_count) {
     cr_assert_eq(cmd->op, OP_COUNT);
     cr_assert_str_eq(cmd->data.count.dbName, "mydb");
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_count, db_name_with_underscore) {
@@ -2043,7 +2034,7 @@ Test(parse_count, db_name_with_underscore) {
     cr_assert_eq(cmd->op, OP_COUNT);
     cr_assert_str_eq(cmd->data.count.dbName, "my_database");
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_count, db_name_starts_with_underscore) {
@@ -2053,7 +2044,7 @@ Test(parse_count, db_name_starts_with_underscore) {
     cr_assert_eq(cmd->op, OP_COUNT);
     cr_assert_str_eq(cmd->data.count.dbName, "_private");
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_count, case_insensitive_command) {
@@ -2063,7 +2054,7 @@ Test(parse_count, case_insensitive_command) {
     cr_assert_eq(cmd->op, OP_COUNT);
     cr_assert_str_eq(cmd->data.count.dbName, "mydb");
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_count, extra_whitespace) {
@@ -2073,7 +2064,7 @@ Test(parse_count, extra_whitespace) {
     cr_assert_eq(cmd->op, OP_COUNT);
     cr_assert_str_eq(cmd->data.count.dbName, "mydb");
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_count, long_db_name) {
@@ -2083,7 +2074,7 @@ Test(parse_count, long_db_name) {
     cr_assert_eq(cmd->op, OP_COUNT);
     cr_assert_str_eq(cmd->data.count.dbName, "my_very_long_database_name");
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 // ============================================================================
@@ -2096,7 +2087,7 @@ Test(parse_count, missing_db_name) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_count, invalid_db_name_starts_with_number) {
@@ -2105,7 +2096,7 @@ Test(parse_count, invalid_db_name_starts_with_number) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_count, invalid_db_name_special_chars) {
@@ -2114,7 +2105,7 @@ Test(parse_count, invalid_db_name_special_chars) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_count, extra_arguments) {
@@ -2123,7 +2114,7 @@ Test(parse_count, extra_arguments) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_count, unexpected_parenthesis) {
@@ -2132,7 +2123,7 @@ Test(parse_count, unexpected_parenthesis) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 // ============================================================================
@@ -2147,7 +2138,7 @@ Test(parse_create_index, basic) {
     cr_assert_str_eq(cmd->data.create_index.dbName, "mydb");
     cr_assert_str_eq(cmd->data.create_index.fieldName, "myfield");
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create_index, with_underscores) {
@@ -2158,7 +2149,7 @@ Test(parse_create_index, with_underscores) {
     cr_assert_str_eq(cmd->data.create_index.dbName, "my_database");
     cr_assert_str_eq(cmd->data.create_index.fieldName, "my_field_name");
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create_index, case_insensitive) {
@@ -2169,7 +2160,7 @@ Test(parse_create_index, case_insensitive) {
     cr_assert_str_eq(cmd->data.create_index.dbName, "MyDb");
     cr_assert_str_eq(cmd->data.create_index.fieldName, "MyField");
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create_index, extra_whitespace) {
@@ -2180,7 +2171,7 @@ Test(parse_create_index, extra_whitespace) {
     cr_assert_str_eq(cmd->data.create_index.dbName, "mydb");
     cr_assert_str_eq(cmd->data.create_index.fieldName, "myfield");
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create_index, long_names) {
@@ -2191,7 +2182,7 @@ Test(parse_create_index, long_names) {
     cr_assert_str_eq(cmd->data.create_index.dbName, "very_long_database_name");
     cr_assert_str_eq(cmd->data.create_index.fieldName, "very_long_field_name_here");
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 // ============================================================================
@@ -2204,7 +2195,7 @@ Test(parse_create_index, missing_db_name) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create_index, missing_field_name) {
@@ -2213,7 +2204,7 @@ Test(parse_create_index, missing_field_name) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create_index, invalid_db_name_starts_with_number) {
@@ -2222,7 +2213,7 @@ Test(parse_create_index, invalid_db_name_starts_with_number) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create_index, invalid_field_name_special_chars) {
@@ -2231,7 +2222,7 @@ Test(parse_create_index, invalid_field_name_special_chars) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }
 
 Test(parse_create_index, extra_arguments) {
@@ -2240,5 +2231,5 @@ Test(parse_create_index, extra_arguments) {
     cr_assert_not_null(cmd);
     cr_assert_eq(cmd->op, OP_ERROR);
 
-    free_command(cmd);
+    free_command(cmd, 0);
 }

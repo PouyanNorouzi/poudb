@@ -45,13 +45,24 @@ $(BIN_DIR)/client: $(TEST_DIR)/client.c | $(BIN_DIR)
 # Filter out main.o to avoid duplicate main symbol
 TEST_OBJS := $(filter-out $(OBJ_DIR)/main.o, $(OBJS))
 
-test: $(BIN_DIR)/test_parser
+test: test_parser test_operations
+	@echo "All tests completed."
+
+test_parser: $(BIN_DIR)/test_parser
 	@echo "Running parser tests..."
 	./$(BIN_DIR)/test_parser
+
+test_operations: $(BIN_DIR)/test_operations
+	@echo "Running operations tests..."
+	./$(BIN_DIR)/test_operations
 
 $(BIN_DIR)/test_parser: $(TEST_DIR)/test_parser.c $(TEST_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) $< $(TEST_OBJS) $(TEST_LDFLAGS) -o $@
 	@echo "Parser tests built successfully."
+
+$(BIN_DIR)/test_operations: $(TEST_DIR)/test_operations.c $(TEST_OBJS) | $(BIN_DIR)
+	$(CC) $(CFLAGS) $< $(TEST_OBJS) $(TEST_LDFLAGS) -o $@
+	@echo "Operations tests built successfully."
 
 # Run commands
 run_server: all
@@ -61,14 +72,6 @@ run_server: all
 run_client: test_client
 	@echo "Starting client..."
 	./$(BIN_DIR)/client
-
-# Run both server and client (server in background)
-run_test: all test_client
-	@echo "Starting server in background and client in foreground..."
-	./$(BIN_DIR)/$(TARGET) & \
-	sleep 1 && \
-	./$(BIN_DIR)/client; \
-	pkill -f $(BIN_DIR)/$(TARGET)
 
 # Clean build artifacts
 clean:

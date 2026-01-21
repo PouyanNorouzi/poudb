@@ -298,6 +298,7 @@ static CommandResult* execute_create_index(CreateIndexData* data) {
 
 /**
  * Validate that data types match field types
+ * Parser uses: size = -2 for int, -1 for double, 0 for bool, >= 0 for string
  */
 static int validate_value_types(DB* db, Data* values, int valueCount) {
     if(db == NULL || values == NULL) {
@@ -312,8 +313,8 @@ static int validate_value_types(DB* db, Data* values, int valueCount) {
 
         switch(expectedType) {
             case TYPE_INT:
-                // Check if value looks like an int (size matches)
-                if(val->size != sizeof(int)) {
+                // Parser sets size = -2 for integers
+                if(val->size != -2) {
                     fprintf(stderr,
                             "Type mismatch at field '%s': expected int\n",
                             db->fields[fieldIdx].name);
@@ -322,7 +323,8 @@ static int validate_value_types(DB* db, Data* values, int valueCount) {
                 break;
 
             case TYPE_DOUBLE:
-                if(val->size != sizeof(double)) {
+                // Parser sets size = -1 for doubles
+                if(val->size != -1) {
                     fprintf(stderr,
                             "Type mismatch at field '%s': expected double\n",
                             db->fields[fieldIdx].name);
@@ -331,7 +333,8 @@ static int validate_value_types(DB* db, Data* values, int valueCount) {
                 break;
 
             case TYPE_BOOL:
-                if(val->size != sizeof(bool)) {
+                // Parser sets size = 0 for booleans
+                if(val->size != 0) {
                     fprintf(stderr,
                             "Type mismatch at field '%s': expected bool\n",
                             db->fields[fieldIdx].name);
@@ -340,9 +343,9 @@ static int validate_value_types(DB* db, Data* values, int valueCount) {
                 break;
 
             case TYPE_STRING:
-                // For strings, size is the string length (or 0 for empty)
-                // and value.s should be set
-                if(val->value.s == NULL && val->size > 0) {
+                // For strings, size >= 0 is the string length
+                // and value.s should not be NULL (can be empty string)
+                if(val->size < 0) {
                     fprintf(stderr,
                             "Type mismatch at field '%s': expected string\n",
                             db->fields[fieldIdx].name);
