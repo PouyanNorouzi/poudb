@@ -2134,3 +2134,111 @@ Test(parse_count, unexpected_parenthesis) {
 
     free_command(cmd);
 }
+
+// ============================================================================
+// Valid CREATE_INDEX command tests
+// ============================================================================
+
+Test(parse_create_index, basic) {
+    Command* cmd = parse_command("CREATE_INDEX mydb myfield");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_CREATE_INDEX);
+    cr_assert_str_eq(cmd->data.create_index.dbName, "mydb");
+    cr_assert_str_eq(cmd->data.create_index.fieldName, "myfield");
+
+    free_command(cmd);
+}
+
+Test(parse_create_index, with_underscores) {
+    Command* cmd = parse_command("CREATE_INDEX my_database my_field_name");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_CREATE_INDEX);
+    cr_assert_str_eq(cmd->data.create_index.dbName, "my_database");
+    cr_assert_str_eq(cmd->data.create_index.fieldName, "my_field_name");
+
+    free_command(cmd);
+}
+
+Test(parse_create_index, case_insensitive) {
+    Command* cmd = parse_command("create_index MyDb MyField");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_CREATE_INDEX);
+    cr_assert_str_eq(cmd->data.create_index.dbName, "MyDb");
+    cr_assert_str_eq(cmd->data.create_index.fieldName, "MyField");
+
+    free_command(cmd);
+}
+
+Test(parse_create_index, extra_whitespace) {
+    Command* cmd = parse_command("  CREATE_INDEX   mydb   myfield  ");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_CREATE_INDEX);
+    cr_assert_str_eq(cmd->data.create_index.dbName, "mydb");
+    cr_assert_str_eq(cmd->data.create_index.fieldName, "myfield");
+
+    free_command(cmd);
+}
+
+Test(parse_create_index, long_names) {
+    Command* cmd = parse_command("CREATE_INDEX very_long_database_name very_long_field_name_here");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_CREATE_INDEX);
+    cr_assert_str_eq(cmd->data.create_index.dbName, "very_long_database_name");
+    cr_assert_str_eq(cmd->data.create_index.fieldName, "very_long_field_name_here");
+
+    free_command(cmd);
+}
+
+// ============================================================================
+// Invalid CREATE_INDEX command tests - Error cases
+// ============================================================================
+
+Test(parse_create_index, missing_db_name) {
+    Command* cmd = parse_command("CREATE_INDEX");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_create_index, missing_field_name) {
+    Command* cmd = parse_command("CREATE_INDEX mydb");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_create_index, invalid_db_name_starts_with_number) {
+    Command* cmd = parse_command("CREATE_INDEX 123invalid myfield");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_create_index, invalid_field_name_special_chars) {
+    Command* cmd = parse_command("CREATE_INDEX mydb field-name");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_create_index, extra_arguments) {
+    Command* cmd = parse_command("CREATE_INDEX mydb myfield extra");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}

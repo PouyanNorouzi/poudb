@@ -1435,7 +1435,68 @@ static Command* parse_create_index(const char* input) {
     }
 
     cmd->op = OP_CREATE_INDEX;
-    // Stub - actual parsing logic would go here
+
+    // Parse db_name and field_name
+    char* db_name = NULL;
+    char* field_name = NULL;
+
+    int token_result = tokenize_args(input, &db_name, &field_name);
+    if(token_result == -1) {
+        free(cmd);
+        return parse_error(ER_MISSING_ARGUMENT, "database name");
+    }
+    if(token_result == -2) {
+        free(db_name);
+        free(cmd);
+        return parse_error(ER_MISSING_ARGUMENT, "field name");
+    }
+    if(token_result == -3) {
+        free(db_name);
+        free(field_name);
+        free(cmd);
+        return parse_error(ER_OTHER, "Failed to allocate memory");
+    }
+
+    // Validate database name
+    if(!is_valid_identifier(db_name)) {
+        char* invalid_name = db_name;
+        free(field_name);
+        free(cmd);
+        Command* err = parse_error(ER_INVALID_IDENTIFIER, invalid_name);
+        free(invalid_name);
+        return err;
+    }
+
+    strncpy(cmd->data.create_index.dbName, db_name, MAX_DB_NAME_LENGTH - 1);
+    cmd->data.create_index.dbName[MAX_DB_NAME_LENGTH - 1] = '\0';
+    free(db_name);
+
+    // Validate field name
+    if(!is_valid_identifier(field_name)) {
+        char* invalid_name = field_name;
+        free(cmd);
+        Command* err = parse_error(ER_INVALID_IDENTIFIER, invalid_name);
+        free(invalid_name);
+        return err;
+    }
+
+    strncpy(cmd->data.create_index.fieldName, field_name, MAX_FIELD_NAME_LENGTH - 1);
+    cmd->data.create_index.fieldName[MAX_FIELD_NAME_LENGTH - 1] = '\0';
+    free(field_name);
+
+    // Check for extra arguments after field_name (should be none)
+    const char* after_field = skip_whitespace(input);
+    // Skip db_name
+    while(*after_field && !isspace((unsigned char)*after_field)) after_field++;
+    after_field = skip_whitespace(after_field);
+    // Skip field_name
+    while(*after_field && !isspace((unsigned char)*after_field)) after_field++;
+    after_field = skip_whitespace(after_field);
+
+    if(*after_field != '\0') {
+        free(cmd);
+        return parse_error(ER_SYNTAX_ERROR, "unexpected arguments after field name");
+    }
 
     return cmd;
 }
