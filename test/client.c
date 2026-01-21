@@ -1,5 +1,6 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,11 +10,26 @@
 #define DEFAULT_PORT 3005
 #define BUFFER_SIZE 1024
 
+// Global variable for signal handler
+static int g_clientfd = -1;
+
+void handle_sigint(int sig) {
+    (void)sig; // Unused parameter
+    printf("\nDisconnecting from server...\n");
+    if (g_clientfd != -1) {
+        close(g_clientfd);
+    }
+    exit(0);
+}
+
 int main(void) {
     int clientfd;
     struct sockaddr_in server_addr;
     char buffer[BUFFER_SIZE];
     ssize_t bytes_read;
+
+    // Setup signal handler for Ctrl+C
+    signal(SIGINT, handle_sigint);
 
     // Create socket
     clientfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -21,6 +37,7 @@ int main(void) {
         perror("Error creating socket");
         exit(EXIT_FAILURE);
     }
+    g_clientfd = clientfd;
 
     // Setup server address structure
     memset(&server_addr, 0, sizeof(server_addr));

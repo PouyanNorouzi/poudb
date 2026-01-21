@@ -107,7 +107,9 @@ char* receive_data(int clientfd) {
         bytes_read =
             read(clientfd, buffer + bytes_total, total_size - bytes_total - 1);
         if(bytes_read <= 0) {
-            break;
+            // Client disconnected or error occurred
+            free(buffer);
+            return NULL;
         }
 
         bytes_total         += bytes_read;
@@ -118,7 +120,9 @@ char* receive_data(int clientfd) {
         if(end) break;
     }
 
-    *end = '\0';
+    if(end) {
+        *end = '\0';
+    }
     // printf("Received: %s\n", buffer);
     return buffer;
 }

@@ -87,6 +87,7 @@ int main(void) {
                     remove_from_epoll(epollfd, clientfd);
                     close(clientfd);
                     clientfd = -1;
+                    continue;
                 }
                 command = parse_command(data);
                 if(command != NULL) {
