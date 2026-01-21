@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #define MAX_DB_NAME_LENGTH    64
 #define MAX_FIELD_NAME_LENGTH 64
+#define INITIAL_ROW_CAPACITY  16
+#define MAX_ROW_CAPACITY      1048576  /* 1M rows max */
 
 /**
  * Enumeration of supported field types
@@ -54,7 +56,9 @@ typedef struct {
     int    fieldsCount;              /* Number of fields/columns */
     Field* fields;    /* Array of field definitions (fields[0] is the key) */
     Row*   rows;      /* Array of rows/records */
-    int    rowsCount; /* Number of rows */
+    int    rowsCount;    /* Number of rows */
+    int    rowsCapacity; /* Allocated capacity for rows */
+    int    nextKey;      /* Next auto-generated key value */
 } DB;
 
 /**
@@ -108,5 +112,17 @@ DB* find_db(const char* name);
  * @return 0 on success, -1 if not found
  */
 int remove_db(const char* name);
+
+/**
+ * Add a row to a database
+ *
+ * @param db Pointer to the database
+ * @param key The key for the row, or negative for auto-generated key
+ * @param values Array of Data values for the row (excluding key)
+ * @param valueCount Number of values in the row (excluding key)
+ * @return 0 on success, -1 if db is NULL, -2 if valueCount mismatch,
+ *         -3 if max capacity reached, -4 if malloc/realloc failed
+ */
+int db_add_row(DB* db, int key, Data* values, int valueCount);
 
 #endif /* DATA_MODEL_H */

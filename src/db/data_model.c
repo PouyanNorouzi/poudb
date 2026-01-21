@@ -128,6 +128,7 @@ int remove_db(const char* name) {
 
 /**
  * Create a new database with the given name and fields
+ * Automatically adds a 'key' field as the first field (unsigned int)
  */
 DB* db_create(const char* name, Field* fields, int fieldsCount) {
     if(name == NULL || fields == NULL || fieldsCount <= 0) {
@@ -144,20 +145,36 @@ DB* db_create(const char* name, Field* fields, int fieldsCount) {
     strncpy(db->name, name, MAX_DB_NAME_LENGTH - 1);
     db->name[MAX_DB_NAME_LENGTH - 1] = '\0';
 
-    // Allocate and copy fields
-    db->fields = (Field*)malloc(sizeof(Field) * fieldsCount);
+    // Allocate fields array with extra slot for auto-generated key field
+    int totalFields = fieldsCount + 1;
+    db->fields = (Field*)malloc(sizeof(Field) * totalFields);
     if(db->fields == NULL) {
         perror("malloc");
         free(db);
         return NULL;
     }
 
-    memcpy(db->fields, fields, sizeof(Field) * fieldsCount);
-    db->fieldsCount = fieldsCount;
+    // First field is always the auto-generated key
+    strncpy(db->fields[0].name, "key", MAX_FIELD_NAME_LENGTH - 1);
+    db->fields[0].name[MAX_FIELD_NAME_LENGTH - 1] = '\0';
+    db->fields[0].type = TYPE_INT;
 
-    // Initialize rows
-    db->rows      = NULL;
-    db->rowsCount = 0;
+    // Copy user-provided fields after the key field
+    memcpy(&db->fields[1], fields, sizeof(Field) * fieldsCount);
+    db->fieldsCount = totalFields;
+
+    // Pre-allocate rows array
+    db->rows = (Row*)malloc(sizeof(Row) * INITIAL_ROW_CAPACITY);
+    if(db->rows == NULL) {
+        perror("malloc");
+        free(db->fields);
+        free(db);
+        return NULL;
+    }
+
+    db->rowsCount    = 0;
+    db->rowsCapacity = INITIAL_ROW_CAPACITY;
+    db->nextKey      = 1;
 
     return db;
 }
@@ -194,4 +211,85 @@ void db_free(DB* db) {
 
     // Free the database itself
     free(db);
+}
+
+/**
+ * Add a row to a database
+ * Key is provided separately; if negative, auto-generates key using nextKey
+ * Values array does not include the key
+ */
+int db_add_row(DB* db, int key, Data* values, int valueCount) {
+    if(db == NULL || values == NULL) {
+        return -1;
+    }
+
+    // valueCount should match fieldsCount - 1 (excluding key field)
+    if(valueCount != db->fieldsCount - 1) {
+        fprintf(stderr, "Value count (%d) doesn't match fields count (%d)\n",
+                valueCount, db->fieldsCount - 1);
+        return -2;
+    }
+
+    // Check if we've reached max capacity
+    if(db->rowsCount >= MAX_ROW_CAPACITY) {
+        fprintf(stderr, "Maximum row capacity (%d) reached\n", MAX_ROW_CAPACITY);
+        return -3;
+    }
+
+    // Check if we need to grow the array
+    if(db->rowsCount >= db->rowsCapacity) {
+        int newCapacity = db->rowsCapacity * 2;
+        if(newCapacity > MAX_ROW_CAPACITY) {
+            newCapacity = MAX_ROW_CAPACITY;
+        }
+
+        Row* newRows = (Row*)realloc(db->rows, sizeof(Row) * newCapacity);
+        if(newRows == NULL) {
+            perror("realloc");
+            return -4;
+        }
+
+        db->rows         = newRows;
+        db->rowsCapacity = newCapacity;
+    }
+
+    // Determine the actual key to use
+    int actualKey;
+    if(key < 0) {
+        // Auto-generate key
+        actualKey = db->nextKey;
+        db->nextKey++;
+    } else {
+        actualKey = key;
+        // Update nextKey if this key is >= current nextKey
+        if(actualKey >= db->nextKey) {
+            db->nextKey = actualKey + 1;
+        }
+    }
+
+    // Allocate memory for the row's values (key + user values)
+    int   totalValues = db->fieldsCount;
+    Data* rowValues   = (Data*)malloc(sizeof(Data) * totalValues);
+    if(rowValues == NULL) {
+        perror("malloc");
+        return -4;
+    }
+
+    // Set the key as first value
+    rowValues[0].size    = sizeof(int);
+    rowValues[0].value.i = actualKey;
+
+    // Copy user values (transfer ownership of strings - no duplication needed)
+    for(int i = 0; i < valueCount; i++) {
+        int fieldIdx             = i + 1;  // Skip key field
+        rowValues[fieldIdx].size  = values[i].size;
+        rowValues[fieldIdx].value = values[i].value;
+    }
+
+    // Add the row
+    db->rows[db->rowsCount].values     = rowValues;
+    db->rows[db->rowsCount].valueCount = totalValues;
+    db->rowsCount++;
+
+    return 0;
 }

@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #include "db/data_model.h"
 
@@ -33,6 +34,7 @@ static CommandResult* execute_get_all(GetAllData* data);
 static CommandResult* execute_search(SearchData* data);
 static CommandResult* execute_count(CountData* data);
 static CommandResult* execute_create_index(CreateIndexData* data);
+static int validate_value_types(DB* db, Data* values, int valueCount);
 
 /**
  * Execute a parsed command
@@ -142,9 +144,49 @@ static CommandResult* execute_add(AddData* data) {
     if(result == NULL) {
         return NULL;
     }
-    // TODO: Implement ADD operation
-    printf("Executing ADD for database: %s\n", data->dbName);
-    result->code    = 0;
+
+    DB* db = find_db(data->dbName);
+    if(db == NULL) {
+        result->code    = -1;
+        result->message = EXECUTION_ERROR_MESSAGES[EX_DB_NOT_FOUND];
+        return result;
+    }
+
+    // valueCount should match fieldsCount - 1 (excluding auto-generated key)
+    if(db->fieldsCount - 1 != data->valueCount) {
+        result->code    = -1;
+        result->message = EXECUTION_ERROR_MESSAGES[EX_TYPE_MISMATCH];
+        return result;
+    }
+
+    // Validate that value types match field types
+    if(validate_value_types(db, data->values, data->valueCount) != 0) {
+        result->code    = -1;
+        result->message = EXECUTION_ERROR_MESSAGES[EX_TYPE_MISMATCH];
+        return result;
+    }
+
+    // Use -1 for auto-generated key, otherwise use provided key
+    int key = data->autoKey ? -1 : data->key;
+
+    int add_result = db_add_row(db, key, data->values, data->valueCount);
+    if(add_result != 0) {
+        result->code = add_result;
+        if(add_result == -3) {
+            result->message = "Maximum row capacity reached";
+        } else if(add_result == -4) {
+            result->message =
+                EXECUTION_ERROR_MESSAGES[EX_MEMORY_ALLOCATION_FAILED];
+        } else {
+            result->message = EXECUTION_ERROR_MESSAGES[EX_UNKNOWN_ERROR];
+        }
+        return result;
+    }
+
+    printf("Added row to database '%s' (key: %d)\n",
+           data->dbName,
+           db->rows[db->rowsCount - 1].values[0].value.i);
+    result->code    = db->rows[db->rowsCount - 1].values[0].value.i;
     result->message = NULL;
     return result;
 }
@@ -252,4 +294,69 @@ static CommandResult* execute_create_index(CreateIndexData* data) {
     result->code    = 0;
     result->message = NULL;
     return result;
+}
+
+/**
+ * Validate that data types match field types
+ */
+static int validate_value_types(DB* db, Data* values, int valueCount) {
+    if(db == NULL || values == NULL) {
+        return -1;
+    }
+
+    // Values don't include the key field, so we check against fields[1..n]
+    for(int i = 0; i < valueCount; i++) {
+        int       fieldIdx     = i + 1;  // Skip key field
+        FieldType expectedType = db->fields[fieldIdx].type;
+        Data*     val          = &values[i];
+
+        switch(expectedType) {
+            case TYPE_INT:
+                // Check if value looks like an int (size matches)
+                if(val->size != sizeof(int)) {
+                    fprintf(stderr,
+                            "Type mismatch at field '%s': expected int\n",
+                            db->fields[fieldIdx].name);
+                    return -1;
+                }
+                break;
+
+            case TYPE_DOUBLE:
+                if(val->size != sizeof(double)) {
+                    fprintf(stderr,
+                            "Type mismatch at field '%s': expected double\n",
+                            db->fields[fieldIdx].name);
+                    return -1;
+                }
+                break;
+
+            case TYPE_BOOL:
+                if(val->size != sizeof(bool)) {
+                    fprintf(stderr,
+                            "Type mismatch at field '%s': expected bool\n",
+                            db->fields[fieldIdx].name);
+                    return -1;
+                }
+                break;
+
+            case TYPE_STRING:
+                // For strings, size is the string length (or 0 for empty)
+                // and value.s should be set
+                if(val->value.s == NULL && val->size > 0) {
+                    fprintf(stderr,
+                            "Type mismatch at field '%s': expected string\n",
+                            db->fields[fieldIdx].name);
+                    return -1;
+                }
+                break;
+
+            default:
+                fprintf(stderr,
+                        "Unknown field type at '%s'\n",
+                        db->fields[fieldIdx].name);
+                return -1;
+        }
+    }
+
+    return 0;
 }

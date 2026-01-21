@@ -95,6 +95,7 @@ int main(void) {
                         send_data(clientfd,
                                   command->data.error,
                                   MAX_ERROR_LENGTH);
+                        free_command(command, 0);
                     } else {
                         CommandResult* result = execute_command(command);
                         
@@ -108,10 +109,12 @@ int main(void) {
                             }
                             free(result);
                         }
+                        // Strings transferred to DB for ADD/UP operations
+                        int transferred = (command->op == OP_ADD || command->op == OP_UP);
+                        free_command(command, transferred);
                     }
                 }
 
-                free(command);
                 free(data);
             } else {
                 puts("Unknown event occured skipping");

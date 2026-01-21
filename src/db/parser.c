@@ -136,6 +136,82 @@ Command* parse_command(const char* input) {
 }
 
 /**
+ * Free all memory associated with a Command structure
+ */
+void free_command(Command* cmd, int strings_transferred) {
+    if(cmd == NULL) return;
+
+    switch(cmd->op) {
+        case OP_CREATE:
+            if(cmd->data.create.fields != NULL) {
+                free(cmd->data.create.fields);
+            }
+            break;
+
+        case OP_ADD:
+            if(cmd->data.add.values != NULL) {
+                if(!strings_transferred) {
+                    // Free string values if not transferred to DB
+                    free_values_array(cmd->data.add.values,
+                                      cmd->data.add.valueCount);
+                }
+                free(cmd->data.add.values);
+            }
+            break;
+
+        case OP_UP:
+            if(cmd->data.update.values != NULL) {
+                if(!strings_transferred) {
+                    free_values_array(cmd->data.update.values,
+                                      cmd->data.update.valueCount);
+                }
+                free(cmd->data.update.values);
+            }
+            if(cmd->data.update.ignoreFlags != NULL) {
+                free(cmd->data.update.ignoreFlags);
+            }
+            break;
+
+        case OP_GET:
+            if(cmd->data.get.fields != NULL) {
+                for(int i = 0; i < cmd->data.get.fieldCount; i++) {
+                    free(cmd->data.get.fields[i]);
+                }
+                free(cmd->data.get.fields);
+            }
+            break;
+
+        case OP_GET_ALL:
+            if(cmd->data.get_all.fields != NULL) {
+                for(int i = 0; i < cmd->data.get_all.fieldCount; i++) {
+                    free(cmd->data.get_all.fields[i]);
+                }
+                free(cmd->data.get_all.fields);
+            }
+            break;
+
+        case OP_SEARCH:
+            if(cmd->data.search.returnFields != NULL) {
+                for(int i = 0; i < cmd->data.search.fieldCount; i++) {
+                    free(cmd->data.search.returnFields[i]);
+                }
+                free(cmd->data.search.returnFields);
+            }
+            // Free search value string if present and not transferred
+            if(!strings_transferred && cmd->data.search.value.value.s != NULL) {
+                free((void*)cmd->data.search.value.value.s);
+            }
+            break;
+
+        default:
+            // OP_DEL, OP_COUNT, OP_CREATE_INDEX, OP_ERROR have no dynamic memory
+            break;
+    }
+
+    free(cmd);
+}
+
+/**
  * Parse a CREATE operation command
  * CREATE <DB> (int smth, string smthElse, ...)
  */
@@ -234,6 +310,15 @@ static Command* parse_create(const char* input) {
     if(fields_result == -7) {
         free(cmd);
         return parse_error(ER_SYNTAX_ERROR, "expected ',' or end of fields");
+    }
+
+    // Check that no field is named 'key' (reserved for auto-generated key)
+    for(int i = 0; i < fieldCount; i++) {
+        if(strcasecmp(fields[i].name, "key") == 0) {
+            free_fields_array(fields, fieldCount);
+            free(cmd);
+            return parse_error(ER_INVALID_IDENTIFIER, "'key' is a reserved field name");
+        }
     }
 
     cmd->data.create.fields     = fields;

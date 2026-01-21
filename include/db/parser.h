@@ -161,4 +161,15 @@ typedef struct {
  */
 Command* parse_command(const char* input);
 
+/**
+ * Free all memory associated with a Command structure
+ * Note: For ADD/UPDATE operations, string values are transferred to the database
+ *       so this only frees the container arrays, not the strings themselves
+ *
+ * @param cmd Pointer to the command to free
+ * @param strings_transferred If true, string values have been transferred to DB
+ *                            and should not be freed
+ */
+void free_command(Command* cmd, int strings_transferred);
+
 #endif /* PARSER_H */
