@@ -1435,3 +1435,247 @@ Test(parse_del, unexpected_parenthesis) {
 
     free_command(cmd);
 }
+
+// ============================================================================
+// Test suite for parse_get_all function
+// ============================================================================
+
+// Helper function to free get_all command memory
+static void free_get_all_command(Command* cmd) {
+    if (cmd == NULL) return;
+    if (cmd->op == OP_GET_ALL && cmd->data.get_all.fields != NULL) {
+        for (int i = 0; i < cmd->data.get_all.fieldCount; i++) {
+            free(cmd->data.get_all.fields[i]);
+        }
+        free(cmd->data.get_all.fields);
+    }
+    free(cmd);
+}
+
+// ============================================================================
+// Valid GET_ALL command tests
+// ============================================================================
+
+Test(parse_get_all, all_fields_no_parentheses) {
+    Command* cmd = parse_command("GET_ALL mydb");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_GET_ALL);
+    cr_assert_str_eq(cmd->data.get_all.dbName, "mydb");
+    cr_assert_eq(cmd->data.get_all.fieldCount, 0);
+    cr_assert_null(cmd->data.get_all.fields);
+
+    free_get_all_command(cmd);
+}
+
+Test(parse_get_all, all_fields_empty_parentheses) {
+    Command* cmd = parse_command("GET_ALL mydb ()");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_GET_ALL);
+    cr_assert_str_eq(cmd->data.get_all.dbName, "mydb");
+    cr_assert_eq(cmd->data.get_all.fieldCount, 0);
+    cr_assert_null(cmd->data.get_all.fields);
+
+    free_get_all_command(cmd);
+}
+
+Test(parse_get_all, single_field) {
+    Command* cmd = parse_command("GET_ALL users (name)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_GET_ALL);
+    cr_assert_str_eq(cmd->data.get_all.dbName, "users");
+    cr_assert_eq(cmd->data.get_all.fieldCount, 1);
+    cr_assert_str_eq(cmd->data.get_all.fields[0], "name");
+
+    free_get_all_command(cmd);
+}
+
+Test(parse_get_all, multiple_fields) {
+    Command* cmd = parse_command("GET_ALL users (id, name, email)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_GET_ALL);
+    cr_assert_str_eq(cmd->data.get_all.dbName, "users");
+    cr_assert_eq(cmd->data.get_all.fieldCount, 3);
+    cr_assert_str_eq(cmd->data.get_all.fields[0], "id");
+    cr_assert_str_eq(cmd->data.get_all.fields[1], "name");
+    cr_assert_str_eq(cmd->data.get_all.fields[2], "email");
+
+    free_get_all_command(cmd);
+}
+
+Test(parse_get_all, field_with_underscores) {
+    Command* cmd = parse_command("GET_ALL mydb (first_name, last_name, user_id)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_GET_ALL);
+    cr_assert_eq(cmd->data.get_all.fieldCount, 3);
+    cr_assert_str_eq(cmd->data.get_all.fields[0], "first_name");
+    cr_assert_str_eq(cmd->data.get_all.fields[1], "last_name");
+    cr_assert_str_eq(cmd->data.get_all.fields[2], "user_id");
+
+    free_get_all_command(cmd);
+}
+
+Test(parse_get_all, field_starts_with_underscore) {
+    Command* cmd = parse_command("GET_ALL mydb (_private, _internal)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_GET_ALL);
+    cr_assert_eq(cmd->data.get_all.fieldCount, 2);
+    cr_assert_str_eq(cmd->data.get_all.fields[0], "_private");
+    cr_assert_str_eq(cmd->data.get_all.fields[1], "_internal");
+
+    free_get_all_command(cmd);
+}
+
+Test(parse_get_all, db_name_with_underscore) {
+    Command* cmd = parse_command("GET_ALL my_database (field1)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_GET_ALL);
+    cr_assert_str_eq(cmd->data.get_all.dbName, "my_database");
+
+    free_get_all_command(cmd);
+}
+
+Test(parse_get_all, db_name_starts_with_underscore) {
+    Command* cmd = parse_command("GET_ALL _private (field1)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_GET_ALL);
+    cr_assert_str_eq(cmd->data.get_all.dbName, "_private");
+
+    free_get_all_command(cmd);
+}
+
+Test(parse_get_all, case_insensitive_command) {
+    Command* cmd = parse_command("get_all mydb (name)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_GET_ALL);
+    cr_assert_str_eq(cmd->data.get_all.dbName, "mydb");
+
+    free_get_all_command(cmd);
+}
+
+Test(parse_get_all, extra_whitespace) {
+    Command* cmd = parse_command("  GET_ALL   mydb   (  field1  ,  field2  )  ");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_GET_ALL);
+    cr_assert_str_eq(cmd->data.get_all.dbName, "mydb");
+    cr_assert_eq(cmd->data.get_all.fieldCount, 2);
+    cr_assert_str_eq(cmd->data.get_all.fields[0], "field1");
+    cr_assert_str_eq(cmd->data.get_all.fields[1], "field2");
+
+    free_get_all_command(cmd);
+}
+
+Test(parse_get_all, many_fields) {
+    Command* cmd = parse_command("GET_ALL mydb (f1, f2, f3, f4, f5, f6, f7, f8)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_GET_ALL);
+    cr_assert_eq(cmd->data.get_all.fieldCount, 8);
+    cr_assert_str_eq(cmd->data.get_all.fields[0], "f1");
+    cr_assert_str_eq(cmd->data.get_all.fields[7], "f8");
+
+    free_get_all_command(cmd);
+}
+
+// ============================================================================
+// Invalid GET_ALL command tests - Error cases
+// ============================================================================
+
+Test(parse_get_all, missing_db_name) {
+    Command* cmd = parse_command("GET_ALL");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_get_all, invalid_db_name_starts_with_number) {
+    Command* cmd = parse_command("GET_ALL 123db (field1)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_get_all, invalid_db_name_special_chars) {
+    Command* cmd = parse_command("GET_ALL my-db (field1)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_get_all, invalid_field_name_starts_with_number) {
+    Command* cmd = parse_command("GET_ALL mydb (123field)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_get_all, invalid_field_name_special_chars) {
+    Command* cmd = parse_command("GET_ALL mydb (field-name)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_get_all, unmatched_opening_paren) {
+    Command* cmd = parse_command("GET_ALL mydb (field1");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_get_all, unmatched_closing_paren) {
+    Command* cmd = parse_command("GET_ALL mydb field1)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_get_all, empty_field_name) {
+    Command* cmd = parse_command("GET_ALL mydb (field1, , field2)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_get_all, trailing_comma) {
+    Command* cmd = parse_command("GET_ALL mydb (field1, field2,)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_get_all, extra_arguments) {
+    Command* cmd = parse_command("GET_ALL mydb extra");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}

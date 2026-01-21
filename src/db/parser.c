@@ -832,6 +832,7 @@ static Command* parse_del(const char* input) {
 /**
  * Parse a GET_ALL operation command
  * GET_ALL <DB> (<FIELDS>)
+ * Fields are optional - if omitted or empty parens, returns all fields
  */
 static Command* parse_get_all(const char* input) {
     Command* cmd = (Command*)malloc(sizeof(Command));
@@ -839,8 +840,181 @@ static Command* parse_get_all(const char* input) {
         return parse_error(ER_OTHER, "Failed to allocate memory");
     }
 
-    cmd->op = OP_GET_ALL;
-    // Stub - actual parsing logic would go here
+    cmd->op                      = OP_GET_ALL;
+    cmd->data.get_all.fields     = NULL;
+    cmd->data.get_all.fieldCount = 0;
+
+    // Check if there are parentheses (optional fields)
+    const char* paren = strchr(input, '(');
+
+    if(paren != NULL) {
+        // Has field specification - split at parenthesis
+        char* before_paren = NULL;
+        char* inside_paren = NULL;
+
+        int split_result = split_at_paren(input, &before_paren, &inside_paren);
+        if(split_result == -1) {
+            free(cmd);
+            return parse_error(ER_SYNTAX_ERROR, "unmatched parenthesis");
+        }
+        if(split_result == -2) {
+            free(cmd);
+            return parse_error(ER_OTHER, "Failed to allocate memory");
+        }
+
+        // Tokenize db_name from before parenthesis
+        char* db_name = NULL;
+
+        int token_result = tokenize_single_arg(before_paren, &db_name);
+        if(token_result == -1) {
+            free(before_paren);
+            free(inside_paren);
+            free(cmd);
+            return parse_error(ER_MISSING_ARGUMENT, "database name");
+        }
+        if(token_result == -2) {
+            free(before_paren);
+            free(inside_paren);
+            free(cmd);
+            return parse_error(ER_OTHER, "Failed to allocate memory");
+        }
+
+        // Validate database name
+        if(!is_valid_identifier(db_name)) {
+            char* invalid_name = db_name;
+            free(before_paren);
+            free(inside_paren);
+            free(cmd);
+            Command* err = parse_error(ER_INVALID_IDENTIFIER, invalid_name);
+            free(invalid_name);
+            return err;
+        }
+
+        strncpy(cmd->data.get_all.dbName, db_name, MAX_DB_NAME_LENGTH - 1);
+        cmd->data.get_all.dbName[MAX_DB_NAME_LENGTH - 1] = '\0';
+        free(db_name);
+        free(before_paren);
+
+        // Parse field names from inside parentheses (if not empty)
+        const char* field_ptr = skip_whitespace(inside_paren);
+        if(*field_ptr != '\0') {
+            // Count fields
+            int field_count = 1;
+            const char* p = field_ptr;
+            while(*p) {
+                if(*p == ',') field_count++;
+                p++;
+            }
+
+            // Allocate field array
+            cmd->data.get_all.fields = (char**)malloc(sizeof(char*) * field_count);
+            if(cmd->data.get_all.fields == NULL) {
+                free(inside_paren);
+                free(cmd);
+                return parse_error(ER_OTHER, "Failed to allocate memory");
+            }
+
+            // Parse each field name
+            p = field_ptr;
+            for(int i = 0; i < field_count; i++) {
+                p = skip_whitespace(p);
+                const char* start = p;
+                while(*p && *p != ',' && !isspace((unsigned char)*p)) {
+                    p++;
+                }
+
+                size_t len = p - start;
+                if(len == 0) {
+                    // Free already allocated fields
+                    for(int j = 0; j < i; j++) {
+                        free(cmd->data.get_all.fields[j]);
+                    }
+                    free(cmd->data.get_all.fields);
+                    free(inside_paren);
+                    free(cmd);
+                    return parse_error(ER_MISSING_ARGUMENT, "field name");
+                }
+
+                cmd->data.get_all.fields[i] = (char*)malloc(len + 1);
+                if(cmd->data.get_all.fields[i] == NULL) {
+                    for(int j = 0; j < i; j++) {
+                        free(cmd->data.get_all.fields[j]);
+                    }
+                    free(cmd->data.get_all.fields);
+                    free(inside_paren);
+                    free(cmd);
+                    return parse_error(ER_OTHER, "Failed to allocate memory");
+                }
+                strncpy(cmd->data.get_all.fields[i], start, len);
+                cmd->data.get_all.fields[i][len] = '\0';
+
+                // Validate field name
+                if(!is_valid_identifier(cmd->data.get_all.fields[i])) {
+                    for(int j = 0; j <= i; j++) {
+                        free(cmd->data.get_all.fields[j]);
+                    }
+                    free(cmd->data.get_all.fields);
+                    free(inside_paren);
+                    free(cmd);
+                    return parse_error(ER_INVALID_IDENTIFIER, "invalid field name");
+                }
+
+                p = skip_whitespace(p);
+                if(*p == ',') p++;
+            }
+
+            cmd->data.get_all.fieldCount = field_count;
+        }
+
+        free(inside_paren);
+    } else {
+        // No opening parenthesis - check for closing parenthesis (syntax error)
+        if(strchr(input, ')') != NULL) {
+            free(cmd);
+            return parse_error(ER_SYNTAX_ERROR, "unmatched parenthesis");
+        }
+
+        // No parentheses - just parse db_name
+        char* db_name = NULL;
+
+        int token_result = tokenize_single_arg(input, &db_name);
+        if(token_result == -1) {
+            free(cmd);
+            return parse_error(ER_MISSING_ARGUMENT, "database name");
+        }
+        if(token_result == -2) {
+            free(cmd);
+            return parse_error(ER_OTHER, "Failed to allocate memory");
+        }
+
+        // Validate database name
+        if(!is_valid_identifier(db_name)) {
+            char* invalid_name = db_name;
+            free(cmd);
+            Command* err = parse_error(ER_INVALID_IDENTIFIER, invalid_name);
+            free(invalid_name);
+            return err;
+        }
+
+        strncpy(cmd->data.get_all.dbName, db_name, MAX_DB_NAME_LENGTH - 1);
+        cmd->data.get_all.dbName[MAX_DB_NAME_LENGTH - 1] = '\0';
+        free(db_name);
+
+        // Check for extra arguments after db_name (should be none)
+        const char* after_db = skip_whitespace(input);
+        // Skip db_name
+        while(*after_db && !isspace((unsigned char)*after_db)) after_db++;
+        after_db = skip_whitespace(after_db);
+
+        if(*after_db != '\0') {
+            free(cmd);
+            return parse_error(ER_SYNTAX_ERROR, "unexpected arguments after database name");
+        }
+
+        // No fields specified - will return all fields
+        cmd->data.get_all.fields = NULL;
+        cmd->data.get_all.fieldCount = 0;
+    }
 
     return cmd;
 }
@@ -905,9 +1079,12 @@ static Operation determine_operation(const char* input) {
     // Check each command string
     for(int i = 0; i < COMMAND_LENGTH; i++) {
         size_t len_command = strlen(COMMAND_STRINGS[i]);
-        size_t len         = len_input > len_command ? len_command : len_input;
 
-        if(strncasecmp(input, COMMAND_STRINGS[i], len) == 0) {
+        // Check if input starts with this command AND is followed by whitespace or end
+        if(len_input >= len_command &&
+           strncasecmp(input, COMMAND_STRINGS[i], len_command) == 0 &&
+           (input[len_command] == '\0' || input[len_command] == ' ' ||
+            input[len_command] == '\t')) {
             return (Operation)i;
         }
     }
