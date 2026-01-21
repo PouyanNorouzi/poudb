@@ -765,8 +765,66 @@ static Command* parse_del(const char* input) {
         return parse_error(ER_OTHER, "Failed to allocate memory");
     }
 
-    cmd->op = OP_DEL;
-    // Stub - actual parsing logic would go here
+    cmd->op               = OP_DEL;
+    cmd->data.delete.key = 0;
+
+    // Parse db_name and key
+    char* db_name = NULL;
+    char* key_str = NULL;
+
+    int token_result = tokenize_args(input, &db_name, &key_str);
+    if(token_result == -1) {
+        free(cmd);
+        return parse_error(ER_MISSING_ARGUMENT, "database name");
+    }
+    if(token_result == -2) {
+        free(db_name);
+        free(cmd);
+        return parse_error(ER_MISSING_ARGUMENT, "key");
+    }
+    if(token_result == -3) {
+        free(db_name);
+        free(key_str);
+        free(cmd);
+        return parse_error(ER_OTHER, "Failed to allocate memory");
+    }
+
+    // Validate database name
+    if(!is_valid_identifier(db_name)) {
+        char* invalid_name = db_name;
+        free(key_str);
+        free(cmd);
+        Command* err = parse_error(ER_INVALID_IDENTIFIER, invalid_name);
+        free(invalid_name);
+        return err;
+    }
+
+    strncpy(cmd->data.delete.dbName, db_name, MAX_DB_NAME_LENGTH - 1);
+    cmd->data.delete.dbName[MAX_DB_NAME_LENGTH - 1] = '\0';
+    free(db_name);
+
+    // Validate and parse key
+    const char* key_ptr = key_str;
+    if(!parse_int(&key_ptr, &cmd->data.delete.key) || *key_ptr != '\0') {
+        free(key_str);
+        free(cmd);
+        return parse_error(ER_SYNTAX_ERROR, "key must be an integer");
+    }
+    free(key_str);
+
+    // Check for extra arguments after key (should be none)
+    const char* after_key = skip_whitespace(input);
+    // Skip db_name
+    while(*after_key && !isspace((unsigned char)*after_key)) after_key++;
+    after_key = skip_whitespace(after_key);
+    // Skip key
+    while(*after_key && !isspace((unsigned char)*after_key)) after_key++;
+    after_key = skip_whitespace(after_key);
+    
+    if(*after_key != '\0') {
+        free(cmd);
+        return parse_error(ER_SYNTAX_ERROR, "unexpected arguments after key");
+    }
 
     return cmd;
 }

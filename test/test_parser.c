@@ -1267,3 +1267,171 @@ Test(parse_get, trailing_comma) {
 
     free_command(cmd);
 }
+
+// ============================================================================
+// Test suite for parse_del function
+// ============================================================================
+
+// ============================================================================
+// Valid DEL command tests
+// ============================================================================
+
+Test(parse_del, basic_delete) {
+    Command* cmd = parse_command("DEL mydb 1");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_DEL);
+    cr_assert_str_eq(cmd->data.delete.dbName, "mydb");
+    cr_assert_eq(cmd->data.delete.key, 1);
+
+    free_command(cmd);
+}
+
+Test(parse_del, zero_key) {
+    Command* cmd = parse_command("DEL mydb 0");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_DEL);
+    cr_assert_str_eq(cmd->data.delete.dbName, "mydb");
+    cr_assert_eq(cmd->data.delete.key, 0);
+
+    free_command(cmd);
+}
+
+Test(parse_del, negative_key) {
+    Command* cmd = parse_command("DEL mydb -5");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_DEL);
+    cr_assert_str_eq(cmd->data.delete.dbName, "mydb");
+    cr_assert_eq(cmd->data.delete.key, -5);
+
+    free_command(cmd);
+}
+
+Test(parse_del, large_key) {
+    Command* cmd = parse_command("DEL mydb 999999");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_DEL);
+    cr_assert_eq(cmd->data.delete.key, 999999);
+
+    free_command(cmd);
+}
+
+Test(parse_del, db_name_with_underscore) {
+    Command* cmd = parse_command("DEL my_database 1");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_DEL);
+    cr_assert_str_eq(cmd->data.delete.dbName, "my_database");
+
+    free_command(cmd);
+}
+
+Test(parse_del, db_name_starts_with_underscore) {
+    Command* cmd = parse_command("DEL _private 1");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_DEL);
+    cr_assert_str_eq(cmd->data.delete.dbName, "_private");
+
+    free_command(cmd);
+}
+
+Test(parse_del, case_insensitive_command) {
+    Command* cmd = parse_command("del mydb 1");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_DEL);
+    cr_assert_str_eq(cmd->data.delete.dbName, "mydb");
+
+    free_command(cmd);
+}
+
+Test(parse_del, extra_whitespace) {
+    Command* cmd = parse_command("  DEL   mydb   10  ");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_DEL);
+    cr_assert_str_eq(cmd->data.delete.dbName, "mydb");
+    cr_assert_eq(cmd->data.delete.key, 10);
+
+    free_command(cmd);
+}
+
+// ============================================================================
+// Invalid DEL command tests - Error cases
+// ============================================================================
+
+Test(parse_del, missing_db_name) {
+    Command* cmd = parse_command("DEL");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_del, missing_key) {
+    Command* cmd = parse_command("DEL mydb");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_del, invalid_db_name_starts_with_number) {
+    Command* cmd = parse_command("DEL 123db 1");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_del, invalid_db_name_special_chars) {
+    Command* cmd = parse_command("DEL my-db 1");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_del, invalid_key_not_integer) {
+    Command* cmd = parse_command("DEL mydb abc");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_del, invalid_key_with_auto_marker) {
+    Command* cmd = parse_command("DEL mydb *");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_del, extra_arguments) {
+    Command* cmd = parse_command("DEL mydb 1 extra");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_del, unexpected_parenthesis) {
+    Command* cmd = parse_command("DEL mydb 1 ()");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
