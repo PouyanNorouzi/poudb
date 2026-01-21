@@ -147,3 +147,20 @@ ssize_t send_data(int clientfd, const char* data, size_t len) {
 
     return bytes_sent;
 }
+
+/**
+ * Sends an integer to a client socket as a string followed by newline
+ * @param clientfd The client socket file descriptor
+ * @param value The integer value to send
+ * @return Number of bytes sent on success, -1 on error
+ */
+ssize_t send_int(int clientfd, int value) {
+    char buffer[32];
+    int  len = snprintf(buffer, sizeof(buffer), "%d\n", value);
+
+    if(len < 0 || (unsigned long)len >= sizeof(buffer)) {
+        return -1;
+    }
+
+    return send_data(clientfd, buffer, len);
+}

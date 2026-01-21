@@ -7,6 +7,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include "db/operations.h"
 #include "db/parser.h"
 #include "epoll_manager.h"
 #include "net.h"
@@ -82,7 +83,11 @@ int main(void) {
                         send_data(clientfd,
                                   command->data.error,
                                   MAX_ERROR_LENGTH);
-                    else send_data(clientfd, "yas", 4);
+                    else {
+                        res = execute_command(command);
+
+                        send_int(clientfd, res);
+                    }
                 }
 
                 free(command);

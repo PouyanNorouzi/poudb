@@ -13,4 +13,6 @@ char* receive_data(int clientfd);
 
 ssize_t send_data(int clientfd, const char* data, size_t len);
 
+ssize_t send_int(int clientfd, int value);
+
 #endif  // NET_H
