@@ -611,3 +611,360 @@ Test(parse_add, invalid_db_name_special_chars) {
 
     free_command(cmd);
 }
+
+// ============================================================================
+// Test suite for parse_up function
+// ============================================================================
+
+// Helper function to free update command memory
+static void free_up_command(Command* cmd) {
+    if (cmd == NULL) return;
+    if (cmd->op == OP_UP && cmd->data.update.values != NULL) {
+        for (int i = 0; i < cmd->data.update.valueCount; i++) {
+            // Free strings (size > 0 indicates string)
+            if (cmd->data.update.values[i].size > 0 && cmd->data.update.values[i].value.s != NULL) {
+                free((void*)cmd->data.update.values[i].value.s);
+            }
+        }
+        free(cmd->data.update.values);
+    }
+    if (cmd->op == OP_UP && cmd->data.update.ignoreFlags != NULL) {
+        free(cmd->data.update.ignoreFlags);
+    }
+    free(cmd);
+}
+
+// ============================================================================
+// Valid UP command tests
+// ============================================================================
+
+Test(parse_up, single_int_value) {
+    Command* cmd = parse_command("UP mydb 1 (42)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_UP);
+    cr_assert_str_eq(cmd->data.update.dbName, "mydb");
+    cr_assert_eq(cmd->data.update.key, 1);
+    cr_assert_eq(cmd->data.update.valueCount, 1);
+    cr_assert_eq(cmd->data.update.values[0].value.i, 42);
+    cr_assert_eq(cmd->data.update.ignoreFlags[0], 0);
+
+    free_up_command(cmd);
+}
+
+Test(parse_up, single_string_value) {
+    Command* cmd = parse_command("UP users 5 (\"John Doe\")");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_UP);
+    cr_assert_str_eq(cmd->data.update.dbName, "users");
+    cr_assert_eq(cmd->data.update.key, 5);
+    cr_assert_eq(cmd->data.update.valueCount, 1);
+    cr_assert_str_eq(cmd->data.update.values[0].value.s, "John Doe");
+    cr_assert_eq(cmd->data.update.ignoreFlags[0], 0);
+
+    free_up_command(cmd);
+}
+
+Test(parse_up, single_double_value) {
+    Command* cmd = parse_command("UP prices 1 (3.14)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_UP);
+    cr_assert_str_eq(cmd->data.update.dbName, "prices");
+    cr_assert_eq(cmd->data.update.valueCount, 1);
+    cr_assert_float_eq(cmd->data.update.values[0].value.d, 3.14, 0.001);
+    cr_assert_eq(cmd->data.update.ignoreFlags[0], 0);
+
+    free_up_command(cmd);
+}
+
+Test(parse_up, single_bool_true) {
+    Command* cmd = parse_command("UP flags 1 (true)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_UP);
+    cr_assert_str_eq(cmd->data.update.dbName, "flags");
+    cr_assert_eq(cmd->data.update.valueCount, 1);
+    cr_assert_eq(cmd->data.update.values[0].value.b, 1);
+    cr_assert_eq(cmd->data.update.ignoreFlags[0], 0);
+
+    free_up_command(cmd);
+}
+
+Test(parse_up, single_bool_false) {
+    Command* cmd = parse_command("UP flags 1 (false)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_UP);
+    cr_assert_str_eq(cmd->data.update.dbName, "flags");
+    cr_assert_eq(cmd->data.update.valueCount, 1);
+    cr_assert_eq(cmd->data.update.values[0].value.b, 0);
+    cr_assert_eq(cmd->data.update.ignoreFlags[0], 0);
+
+    free_up_command(cmd);
+}
+
+Test(parse_up, single_ignore_marker) {
+    Command* cmd = parse_command("UP mydb 1 (_)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_UP);
+    cr_assert_str_eq(cmd->data.update.dbName, "mydb");
+    cr_assert_eq(cmd->data.update.key, 1);
+    cr_assert_eq(cmd->data.update.valueCount, 1);
+    cr_assert_eq(cmd->data.update.ignoreFlags[0], 1);
+
+    free_up_command(cmd);
+}
+
+Test(parse_up, multiple_values_mixed_types) {
+    Command* cmd = parse_command("UP users 10 (42, \"Alice\", 99.5, true)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_UP);
+    cr_assert_str_eq(cmd->data.update.dbName, "users");
+    cr_assert_eq(cmd->data.update.key, 10);
+    cr_assert_eq(cmd->data.update.valueCount, 4);
+    cr_assert_eq(cmd->data.update.values[0].value.i, 42);
+    cr_assert_str_eq(cmd->data.update.values[1].value.s, "Alice");
+    cr_assert_float_eq(cmd->data.update.values[2].value.d, 99.5, 0.001);
+    cr_assert_eq(cmd->data.update.values[3].value.b, 1);
+    cr_assert_eq(cmd->data.update.ignoreFlags[0], 0);
+    cr_assert_eq(cmd->data.update.ignoreFlags[1], 0);
+    cr_assert_eq(cmd->data.update.ignoreFlags[2], 0);
+    cr_assert_eq(cmd->data.update.ignoreFlags[3], 0);
+
+    free_up_command(cmd);
+}
+
+Test(parse_up, multiple_values_with_ignore) {
+    Command* cmd = parse_command("UP users 10 (_, \"NewName\", _, false)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_UP);
+    cr_assert_str_eq(cmd->data.update.dbName, "users");
+    cr_assert_eq(cmd->data.update.key, 10);
+    cr_assert_eq(cmd->data.update.valueCount, 4);
+    cr_assert_eq(cmd->data.update.ignoreFlags[0], 1);
+    cr_assert_eq(cmd->data.update.ignoreFlags[1], 0);
+    cr_assert_str_eq(cmd->data.update.values[1].value.s, "NewName");
+    cr_assert_eq(cmd->data.update.ignoreFlags[2], 1);
+    cr_assert_eq(cmd->data.update.ignoreFlags[3], 0);
+    cr_assert_eq(cmd->data.update.values[3].value.b, 0);
+
+    free_up_command(cmd);
+}
+
+Test(parse_up, all_ignored) {
+    Command* cmd = parse_command("UP mydb 5 (_, _, _)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_UP);
+    cr_assert_eq(cmd->data.update.valueCount, 3);
+    cr_assert_eq(cmd->data.update.ignoreFlags[0], 1);
+    cr_assert_eq(cmd->data.update.ignoreFlags[1], 1);
+    cr_assert_eq(cmd->data.update.ignoreFlags[2], 1);
+
+    free_up_command(cmd);
+}
+
+Test(parse_up, negative_int_value) {
+    Command* cmd = parse_command("UP temps 1 (-25)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_UP);
+    cr_assert_eq(cmd->data.update.valueCount, 1);
+    cr_assert_eq(cmd->data.update.values[0].value.i, -25);
+
+    free_up_command(cmd);
+}
+
+Test(parse_up, negative_double_value) {
+    Command* cmd = parse_command("UP temps 1 (-3.14)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_UP);
+    cr_assert_eq(cmd->data.update.valueCount, 1);
+    cr_assert_float_eq(cmd->data.update.values[0].value.d, -3.14, 0.001);
+
+    free_up_command(cmd);
+}
+
+Test(parse_up, negative_key) {
+    Command* cmd = parse_command("UP mydb -5 (42)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_UP);
+    cr_assert_eq(cmd->data.update.key, -5);
+    cr_assert_eq(cmd->data.update.valueCount, 1);
+
+    free_up_command(cmd);
+}
+
+Test(parse_up, zero_key) {
+    Command* cmd = parse_command("UP mydb 0 (42)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_UP);
+    cr_assert_eq(cmd->data.update.key, 0);
+
+    free_up_command(cmd);
+}
+
+Test(parse_up, string_with_escape_sequences) {
+    Command* cmd = parse_command("UP logs 1 (\"Hello\\nWorld\\t!\")");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_UP);
+    cr_assert_eq(cmd->data.update.valueCount, 1);
+    cr_assert_str_eq(cmd->data.update.values[0].value.s, "Hello\nWorld\t!");
+
+    free_up_command(cmd);
+}
+
+Test(parse_up, case_insensitive_command) {
+    Command* cmd = parse_command("up mydb 1 (42)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_UP);
+    cr_assert_str_eq(cmd->data.update.dbName, "mydb");
+
+    free_up_command(cmd);
+}
+
+Test(parse_up, extra_whitespace) {
+    Command* cmd = parse_command("   UP   mydb   5   (  42 ,  \"test\"  )  ");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_UP);
+    cr_assert_str_eq(cmd->data.update.dbName, "mydb");
+    cr_assert_eq(cmd->data.update.key, 5);
+    cr_assert_eq(cmd->data.update.valueCount, 2);
+    cr_assert_eq(cmd->data.update.values[0].value.i, 42);
+    cr_assert_str_eq(cmd->data.update.values[1].value.s, "test");
+
+    free_up_command(cmd);
+}
+
+Test(parse_up, underscore_db_name) {
+    Command* cmd = parse_command("UP _private 1 (42)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_UP);
+    cr_assert_str_eq(cmd->data.update.dbName, "_private");
+
+    free_up_command(cmd);
+}
+
+// ============================================================================
+// Invalid UP command tests - Error cases
+// ============================================================================
+
+Test(parse_up, missing_db_name) {
+    Command* cmd = parse_command("UP (42)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_up, missing_key) {
+    Command* cmd = parse_command("UP mydb (42)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_up, missing_values) {
+    Command* cmd = parse_command("UP mydb 1");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_up, empty_values) {
+    Command* cmd = parse_command("UP mydb 1 ()");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_up, invalid_db_name) {
+    Command* cmd = parse_command("UP 123db 1 (42)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_up, invalid_key_not_integer) {
+    Command* cmd = parse_command("UP mydb abc (42)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_up, auto_key_not_allowed) {
+    Command* cmd = parse_command("UP mydb * (42)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_up, unmatched_parenthesis) {
+    Command* cmd = parse_command("UP mydb 1 (42, \"test\"");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_up, unterminated_string) {
+    Command* cmd = parse_command("UP mydb 1 (\"unterminated)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_up, invalid_value) {
+    Command* cmd = parse_command("UP mydb 1 (invalid_identifier)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_up, missing_comma_between_values) {
+    Command* cmd = parse_command("UP mydb 1 (42 \"test\")");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_up, invalid_db_name_special_chars) {
+    Command* cmd = parse_command("UP my-db 1 (42)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
