@@ -1022,6 +1022,7 @@ static Command* parse_get_all(const char* input) {
 /**
  * Parse a SEARCH operation command
  * SEARCH <DB> <FIELD> <VALUE> (<FIELDS>)
+ * Return fields are optional - if omitted or empty parens, returns all fields
  */
 static Command* parse_search(const char* input) {
     Command* cmd = (Command*)malloc(sizeof(Command));
@@ -1029,8 +1030,344 @@ static Command* parse_search(const char* input) {
         return parse_error(ER_OTHER, "Failed to allocate memory");
     }
 
-    cmd->op = OP_SEARCH;
-    // Stub - actual parsing logic would go here
+    cmd->op                         = OP_SEARCH;
+    cmd->data.search.returnFields   = NULL;
+    cmd->data.search.fieldCount     = 0;
+    cmd->data.search.value.size     = 0;
+    cmd->data.search.value.value.i  = 0;
+
+    // Check if there are parentheses (optional return fields)
+    const char* paren = strchr(input, '(');
+
+    char* db_name = NULL;
+    char* field_name = NULL;
+    char* value_str = NULL;
+
+    if(paren != NULL) {
+        // Has return field specification - split at parenthesis
+        char* before_paren = NULL;
+        char* inside_paren = NULL;
+
+        int split_result = split_at_paren(input, &before_paren, &inside_paren);
+        if(split_result == -1) {
+            free(cmd);
+            return parse_error(ER_SYNTAX_ERROR, "unmatched parenthesis");
+        }
+        if(split_result == -2) {
+            free(cmd);
+            return parse_error(ER_OTHER, "Failed to allocate memory");
+        }
+
+        // Parse db_name, field_name, and value from before parenthesis
+        const char* ptr = skip_whitespace(before_paren);
+
+        // Extract database name (first token)
+        const char* start = ptr;
+        while(*ptr && !isspace((unsigned char)*ptr)) ptr++;
+        
+        size_t db_len = ptr - start;
+        if(db_len == 0) {
+            free(before_paren);
+            free(inside_paren);
+            free(cmd);
+            return parse_error(ER_MISSING_ARGUMENT, "database name");
+        }
+
+        db_name = (char*)malloc(db_len + 1);
+        if(db_name == NULL) {
+            free(before_paren);
+            free(inside_paren);
+            free(cmd);
+            return parse_error(ER_OTHER, "Failed to allocate memory");
+        }
+        strncpy(db_name, start, db_len);
+        db_name[db_len] = '\0';
+
+        // Extract field name (second token)
+        ptr = skip_whitespace(ptr);
+        if(*ptr == '\0') {
+            free(db_name);
+            free(before_paren);
+            free(inside_paren);
+            free(cmd);
+            return parse_error(ER_MISSING_ARGUMENT, "field name");
+        }
+
+        start = ptr;
+        while(*ptr && !isspace((unsigned char)*ptr)) ptr++;
+        
+        size_t field_len = ptr - start;
+        if(field_len == 0) {
+            free(db_name);
+            free(before_paren);
+            free(inside_paren);
+            free(cmd);
+            return parse_error(ER_MISSING_ARGUMENT, "field name");
+        }
+
+        field_name = (char*)malloc(field_len + 1);
+        if(field_name == NULL) {
+            free(db_name);
+            free(before_paren);
+            free(inside_paren);
+            free(cmd);
+            return parse_error(ER_OTHER, "Failed to allocate memory");
+        }
+        strncpy(field_name, start, field_len);
+        field_name[field_len] = '\0';
+
+        // Extract value (rest before parenthesis)
+        ptr = skip_whitespace(ptr);
+        if(*ptr == '\0') {
+            free(db_name);
+            free(field_name);
+            free(before_paren);
+            free(inside_paren);
+            free(cmd);
+            return parse_error(ER_MISSING_ARGUMENT, "search value");
+        }
+
+        // The value extends to the end of before_paren
+        value_str = strdup(ptr);
+        if(value_str == NULL) {
+            free(db_name);
+            free(field_name);
+            free(before_paren);
+            free(inside_paren);
+            free(cmd);
+            return parse_error(ER_OTHER, "Failed to allocate memory");
+        }
+
+        free(before_paren);
+
+        // Parse return field names from inside parentheses (if not empty)
+        const char* field_ptr = skip_whitespace(inside_paren);
+        if(*field_ptr != '\0') {
+            // Count fields
+            int field_count = 1;
+            const char* p = field_ptr;
+            while(*p) {
+                if(*p == ',') field_count++;
+                p++;
+            }
+
+            // Allocate field array
+            cmd->data.search.returnFields = (char**)malloc(sizeof(char*) * field_count);
+            if(cmd->data.search.returnFields == NULL) {
+                free(db_name);
+                free(field_name);
+                free(value_str);
+                free(inside_paren);
+                free(cmd);
+                return parse_error(ER_OTHER, "Failed to allocate memory");
+            }
+
+            // Parse each field name
+            p = field_ptr;
+            for(int i = 0; i < field_count; i++) {
+                p = skip_whitespace(p);
+                const char* start = p;
+                while(*p && *p != ',' && !isspace((unsigned char)*p)) {
+                    p++;
+                }
+
+                size_t len = p - start;
+                if(len == 0) {
+                    for(int j = 0; j < i; j++) {
+                        free(cmd->data.search.returnFields[j]);
+                    }
+                    free(cmd->data.search.returnFields);
+                    free(db_name);
+                    free(field_name);
+                    free(value_str);
+                    free(inside_paren);
+                    free(cmd);
+                    return parse_error(ER_MISSING_ARGUMENT, "return field name");
+                }
+
+                cmd->data.search.returnFields[i] = (char*)malloc(len + 1);
+                if(cmd->data.search.returnFields[i] == NULL) {
+                    for(int j = 0; j < i; j++) {
+                        free(cmd->data.search.returnFields[j]);
+                    }
+                    free(cmd->data.search.returnFields);
+                    free(db_name);
+                    free(field_name);
+                    free(value_str);
+                    free(inside_paren);
+                    free(cmd);
+                    return parse_error(ER_OTHER, "Failed to allocate memory");
+                }
+                strncpy(cmd->data.search.returnFields[i], start, len);
+                cmd->data.search.returnFields[i][len] = '\0';
+
+                // Validate field name
+                if(!is_valid_identifier(cmd->data.search.returnFields[i])) {
+                    for(int j = 0; j <= i; j++) {
+                        free(cmd->data.search.returnFields[j]);
+                    }
+                    free(cmd->data.search.returnFields);
+                    free(db_name);
+                    free(field_name);
+                    free(value_str);
+                    free(inside_paren);
+                    free(cmd);
+                    return parse_error(ER_INVALID_IDENTIFIER, "invalid return field name");
+                }
+
+                p = skip_whitespace(p);
+                if(*p == ',') p++;
+            }
+
+            cmd->data.search.fieldCount = field_count;
+        }
+
+        free(inside_paren);
+    } else {
+        // No opening parenthesis - check for closing parenthesis (syntax error)
+        if(strchr(input, ')') != NULL) {
+            free(cmd);
+            return parse_error(ER_SYNTAX_ERROR, "unmatched parenthesis");
+        }
+
+        // Parse db_name, field_name, and value
+        const char* ptr = skip_whitespace(input);
+
+        // Extract database name (first token)
+        const char* start = ptr;
+        while(*ptr && !isspace((unsigned char)*ptr)) ptr++;
+        
+        size_t db_len = ptr - start;
+        if(db_len == 0) {
+            free(cmd);
+            return parse_error(ER_MISSING_ARGUMENT, "database name");
+        }
+
+        db_name = (char*)malloc(db_len + 1);
+        if(db_name == NULL) {
+            free(cmd);
+            return parse_error(ER_OTHER, "Failed to allocate memory");
+        }
+        strncpy(db_name, start, db_len);
+        db_name[db_len] = '\0';
+
+        // Extract field name (second token)
+        ptr = skip_whitespace(ptr);
+        if(*ptr == '\0') {
+            free(db_name);
+            free(cmd);
+            return parse_error(ER_MISSING_ARGUMENT, "field name");
+        }
+
+        start = ptr;
+        while(*ptr && !isspace((unsigned char)*ptr)) ptr++;
+        
+        size_t field_len = ptr - start;
+        if(field_len == 0) {
+            free(db_name);
+            free(cmd);
+            return parse_error(ER_MISSING_ARGUMENT, "field name");
+        }
+
+        field_name = (char*)malloc(field_len + 1);
+        if(field_name == NULL) {
+            free(db_name);
+            free(cmd);
+            return parse_error(ER_OTHER, "Failed to allocate memory");
+        }
+        strncpy(field_name, start, field_len);
+        field_name[field_len] = '\0';
+
+        // Extract value (rest of input)
+        ptr = skip_whitespace(ptr);
+        if(*ptr == '\0') {
+            free(db_name);
+            free(field_name);
+            free(cmd);
+            return parse_error(ER_MISSING_ARGUMENT, "search value");
+        }
+
+        value_str = strdup(ptr);
+        if(value_str == NULL) {
+            free(db_name);
+            free(field_name);
+            free(cmd);
+            return parse_error(ER_OTHER, "Failed to allocate memory");
+        }
+
+        // No return fields specified - will return all fields
+        cmd->data.search.returnFields = NULL;
+        cmd->data.search.fieldCount = 0;
+    }
+
+    // Validate database name
+    if(!is_valid_identifier(db_name)) {
+        char* invalid_name = db_name;
+        if(cmd->data.search.returnFields != NULL) {
+            for(int j = 0; j < cmd->data.search.fieldCount; j++) {
+                free(cmd->data.search.returnFields[j]);
+            }
+            free(cmd->data.search.returnFields);
+        }
+        free(field_name);
+        free(value_str);
+        free(cmd);
+        Command* err = parse_error(ER_INVALID_IDENTIFIER, invalid_name);
+        free(invalid_name);
+        return err;
+    }
+
+    strncpy(cmd->data.search.dbName, db_name, MAX_DB_NAME_LENGTH - 1);
+    cmd->data.search.dbName[MAX_DB_NAME_LENGTH - 1] = '\0';
+    free(db_name);
+
+    // Validate field name
+    if(!is_valid_identifier(field_name)) {
+        char* invalid_name = field_name;
+        if(cmd->data.search.returnFields != NULL) {
+            for(int j = 0; j < cmd->data.search.fieldCount; j++) {
+                free(cmd->data.search.returnFields[j]);
+            }
+            free(cmd->data.search.returnFields);
+        }
+        free(value_str);
+        free(cmd);
+        Command* err = parse_error(ER_INVALID_IDENTIFIER, invalid_name);
+        free(invalid_name);
+        return err;
+    }
+
+    strncpy(cmd->data.search.fieldName, field_name, MAX_FIELD_NAME_LENGTH - 1);
+    cmd->data.search.fieldName[MAX_FIELD_NAME_LENGTH - 1] = '\0';
+    free(field_name);
+
+    // Parse the search value
+    const char* value_ptr = value_str;
+    int result = parse_single_value(&value_ptr, &cmd->data.search.value);
+    
+    // Check for trailing content after the value
+    value_ptr = skip_whitespace(value_ptr);
+    if(*value_ptr != '\0') {
+        result = -6; // Invalid value - has trailing content
+    }
+
+    if(result != 0) {
+        if(cmd->data.search.returnFields != NULL) {
+            for(int j = 0; j < cmd->data.search.fieldCount; j++) {
+                free(cmd->data.search.returnFields[j]);
+            }
+            free(cmd->data.search.returnFields);
+        }
+        free(value_str);
+        free(cmd);
+        
+        if(result == -3) return parse_error(ER_SYNTAX_ERROR, "unterminated string in search value");
+        if(result == -4) return parse_error(ER_SYNTAX_ERROR, "invalid double value");
+        if(result == -5) return parse_error(ER_SYNTAX_ERROR, "invalid integer value");
+        return parse_error(ER_SYNTAX_ERROR, "invalid search value");
+    }
+    
+    free(value_str);
 
     return cmd;
 }

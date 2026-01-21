@@ -1679,3 +1679,341 @@ Test(parse_get_all, extra_arguments) {
 
     free_command(cmd);
 }
+
+// ============================================================================
+// Test suite for parse_search function
+// ============================================================================
+
+// Helper function to free search command memory
+static void free_search_command(Command* cmd) {
+    if (cmd == NULL) return;
+    if (cmd->op == OP_SEARCH) {
+        if (cmd->data.search.returnFields != NULL) {
+            for (int i = 0; i < cmd->data.search.fieldCount; i++) {
+                free(cmd->data.search.returnFields[i]);
+            }
+            free(cmd->data.search.returnFields);
+        }
+        // Free string value if present
+        if (cmd->data.search.value.size > 0 && cmd->data.search.value.value.s != NULL) {
+            free((void*)cmd->data.search.value.value.s);
+        }
+    }
+    free(cmd);
+}
+
+// ============================================================================
+// Valid SEARCH command tests
+// ============================================================================
+
+Test(parse_search, all_fields_int_value) {
+    Command* cmd = parse_command("SEARCH mydb age 25");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_SEARCH);
+    cr_assert_str_eq(cmd->data.search.dbName, "mydb");
+    cr_assert_str_eq(cmd->data.search.fieldName, "age");
+    cr_assert_eq(cmd->data.search.value.value.i, 25);
+    cr_assert_eq(cmd->data.search.fieldCount, 0);
+    cr_assert_null(cmd->data.search.returnFields);
+
+    free_search_command(cmd);
+}
+
+Test(parse_search, all_fields_string_value) {
+    Command* cmd = parse_command("SEARCH users name \"John\"");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_SEARCH);
+    cr_assert_str_eq(cmd->data.search.dbName, "users");
+    cr_assert_str_eq(cmd->data.search.fieldName, "name");
+    cr_assert_str_eq(cmd->data.search.value.value.s, "John");
+    cr_assert_eq(cmd->data.search.fieldCount, 0);
+
+    free_search_command(cmd);
+}
+
+Test(parse_search, all_fields_double_value) {
+    Command* cmd = parse_command("SEARCH products price 99.99");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_SEARCH);
+    cr_assert_str_eq(cmd->data.search.dbName, "products");
+    cr_assert_str_eq(cmd->data.search.fieldName, "price");
+    cr_assert_float_eq(cmd->data.search.value.value.d, 99.99, 0.001);
+
+    free_search_command(cmd);
+}
+
+Test(parse_search, all_fields_bool_true) {
+    Command* cmd = parse_command("SEARCH users active true");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_SEARCH);
+    cr_assert_str_eq(cmd->data.search.dbName, "users");
+    cr_assert_str_eq(cmd->data.search.fieldName, "active");
+    cr_assert_eq(cmd->data.search.value.value.b, 1);
+
+    free_search_command(cmd);
+}
+
+Test(parse_search, all_fields_bool_false) {
+    Command* cmd = parse_command("SEARCH users verified false");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_SEARCH);
+    cr_assert_str_eq(cmd->data.search.fieldName, "verified");
+    cr_assert_eq(cmd->data.search.value.value.b, 0);
+
+    free_search_command(cmd);
+}
+
+Test(parse_search, all_fields_empty_parens) {
+    Command* cmd = parse_command("SEARCH mydb age 25 ()");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_SEARCH);
+    cr_assert_str_eq(cmd->data.search.dbName, "mydb");
+    cr_assert_str_eq(cmd->data.search.fieldName, "age");
+    cr_assert_eq(cmd->data.search.value.value.i, 25);
+    cr_assert_eq(cmd->data.search.fieldCount, 0);
+
+    free_search_command(cmd);
+}
+
+Test(parse_search, single_return_field) {
+    Command* cmd = parse_command("SEARCH users age 25 (name)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_SEARCH);
+    cr_assert_str_eq(cmd->data.search.dbName, "users");
+    cr_assert_str_eq(cmd->data.search.fieldName, "age");
+    cr_assert_eq(cmd->data.search.value.value.i, 25);
+    cr_assert_eq(cmd->data.search.fieldCount, 1);
+    cr_assert_str_eq(cmd->data.search.returnFields[0], "name");
+
+    free_search_command(cmd);
+}
+
+Test(parse_search, multiple_return_fields) {
+    Command* cmd = parse_command("SEARCH users age 25 (name, email, phone)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_SEARCH);
+    cr_assert_str_eq(cmd->data.search.dbName, "users");
+    cr_assert_eq(cmd->data.search.fieldCount, 3);
+    cr_assert_str_eq(cmd->data.search.returnFields[0], "name");
+    cr_assert_str_eq(cmd->data.search.returnFields[1], "email");
+    cr_assert_str_eq(cmd->data.search.returnFields[2], "phone");
+
+    free_search_command(cmd);
+}
+
+Test(parse_search, string_with_spaces) {
+    Command* cmd = parse_command("SEARCH users name \"John Doe\" (email)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_SEARCH);
+    cr_assert_str_eq(cmd->data.search.fieldName, "name");
+    cr_assert_str_eq(cmd->data.search.value.value.s, "John Doe");
+    cr_assert_eq(cmd->data.search.fieldCount, 1);
+
+    free_search_command(cmd);
+}
+
+Test(parse_search, negative_int_value) {
+    Command* cmd = parse_command("SEARCH temps temperature -10");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_SEARCH);
+    cr_assert_eq(cmd->data.search.value.value.i, -10);
+
+    free_search_command(cmd);
+}
+
+Test(parse_search, negative_double_value) {
+    Command* cmd = parse_command("SEARCH coords latitude -45.5");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_SEARCH);
+    cr_assert_float_eq(cmd->data.search.value.value.d, -45.5, 0.001);
+
+    free_search_command(cmd);
+}
+
+Test(parse_search, field_with_underscores) {
+    Command* cmd = parse_command("SEARCH users first_name \"Alice\" (user_id, last_name)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_SEARCH);
+    cr_assert_str_eq(cmd->data.search.fieldName, "first_name");
+    cr_assert_eq(cmd->data.search.fieldCount, 2);
+    cr_assert_str_eq(cmd->data.search.returnFields[0], "user_id");
+    cr_assert_str_eq(cmd->data.search.returnFields[1], "last_name");
+
+    free_search_command(cmd);
+}
+
+Test(parse_search, case_insensitive_command) {
+    Command* cmd = parse_command("search mydb age 25");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_SEARCH);
+    cr_assert_str_eq(cmd->data.search.dbName, "mydb");
+
+    free_search_command(cmd);
+}
+
+Test(parse_search, case_insensitive_bool) {
+    Command* cmd = parse_command("SEARCH users active TRUE");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_SEARCH);
+    cr_assert_eq(cmd->data.search.value.value.b, 1);
+
+    free_search_command(cmd);
+}
+
+Test(parse_search, extra_whitespace) {
+    Command* cmd = parse_command("  SEARCH   users   age   25   (  name  ,  email  )  ");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_SEARCH);
+    cr_assert_str_eq(cmd->data.search.dbName, "users");
+    cr_assert_str_eq(cmd->data.search.fieldName, "age");
+    cr_assert_eq(cmd->data.search.value.value.i, 25);
+    cr_assert_eq(cmd->data.search.fieldCount, 2);
+
+    free_search_command(cmd);
+}
+
+Test(parse_search, db_with_underscore) {
+    Command* cmd = parse_command("SEARCH my_database age 25");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_SEARCH);
+    cr_assert_str_eq(cmd->data.search.dbName, "my_database");
+
+    free_search_command(cmd);
+}
+
+// ============================================================================
+// Invalid SEARCH command tests - Error cases
+// ============================================================================
+
+Test(parse_search, missing_db_name) {
+    Command* cmd = parse_command("SEARCH");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_search, missing_field_name) {
+    Command* cmd = parse_command("SEARCH mydb");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_search, missing_value) {
+    Command* cmd = parse_command("SEARCH mydb age");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_search, invalid_db_name) {
+    Command* cmd = parse_command("SEARCH 123db age 25");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_search, invalid_field_name) {
+    Command* cmd = parse_command("SEARCH mydb 123age 25");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_search, invalid_db_name_special_chars) {
+    Command* cmd = parse_command("SEARCH my-db age 25");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_search, invalid_field_name_special_chars) {
+    Command* cmd = parse_command("SEARCH mydb user-age 25");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_search, unterminated_string) {
+    Command* cmd = parse_command("SEARCH users name \"John");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_search, invalid_return_field) {
+    Command* cmd = parse_command("SEARCH users age 25 (123name)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_search, unmatched_opening_paren) {
+    Command* cmd = parse_command("SEARCH users age 25 (name");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_search, unmatched_closing_paren) {
+    Command* cmd = parse_command("SEARCH users age 25 name)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_search, empty_return_field_name) {
+    Command* cmd = parse_command("SEARCH users age 25 (name, , email)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_search, trailing_comma) {
+    Command* cmd = parse_command("SEARCH users age 25 (name, email,)");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
