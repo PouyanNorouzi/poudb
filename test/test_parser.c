@@ -2017,3 +2017,120 @@ Test(parse_search, trailing_comma) {
 
     free_command(cmd);
 }
+
+// ============================================================================
+// Test suite for parse_count function
+// ============================================================================
+
+// ============================================================================
+// Valid COUNT command tests
+// ============================================================================
+
+Test(parse_count, basic_count) {
+    Command* cmd = parse_command("COUNT mydb");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_COUNT);
+    cr_assert_str_eq(cmd->data.count.dbName, "mydb");
+
+    free_command(cmd);
+}
+
+Test(parse_count, db_name_with_underscore) {
+    Command* cmd = parse_command("COUNT my_database");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_COUNT);
+    cr_assert_str_eq(cmd->data.count.dbName, "my_database");
+
+    free_command(cmd);
+}
+
+Test(parse_count, db_name_starts_with_underscore) {
+    Command* cmd = parse_command("COUNT _private");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_COUNT);
+    cr_assert_str_eq(cmd->data.count.dbName, "_private");
+
+    free_command(cmd);
+}
+
+Test(parse_count, case_insensitive_command) {
+    Command* cmd = parse_command("count mydb");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_COUNT);
+    cr_assert_str_eq(cmd->data.count.dbName, "mydb");
+
+    free_command(cmd);
+}
+
+Test(parse_count, extra_whitespace) {
+    Command* cmd = parse_command("  COUNT   mydb  ");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_COUNT);
+    cr_assert_str_eq(cmd->data.count.dbName, "mydb");
+
+    free_command(cmd);
+}
+
+Test(parse_count, long_db_name) {
+    Command* cmd = parse_command("COUNT my_very_long_database_name");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_COUNT);
+    cr_assert_str_eq(cmd->data.count.dbName, "my_very_long_database_name");
+
+    free_command(cmd);
+}
+
+// ============================================================================
+// Invalid COUNT command tests - Error cases
+// ============================================================================
+
+Test(parse_count, missing_db_name) {
+    Command* cmd = parse_command("COUNT");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_count, invalid_db_name_starts_with_number) {
+    Command* cmd = parse_command("COUNT 123db");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_count, invalid_db_name_special_chars) {
+    Command* cmd = parse_command("COUNT my-db");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_count, extra_arguments) {
+    Command* cmd = parse_command("COUNT mydb extra");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}
+
+Test(parse_count, unexpected_parenthesis) {
+    Command* cmd = parse_command("COUNT mydb ()");
+
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+
+    free_command(cmd);
+}

@@ -1383,7 +1383,43 @@ static Command* parse_count(const char* input) {
     }
 
     cmd->op = OP_COUNT;
-    // Stub - actual parsing logic would go here
+
+    // Parse db_name
+    char* db_name = NULL;
+
+    int token_result = tokenize_single_arg(input, &db_name);
+    if(token_result == -1) {
+        free(cmd);
+        return parse_error(ER_MISSING_ARGUMENT, "database name");
+    }
+    if(token_result == -2) {
+        free(cmd);
+        return parse_error(ER_OTHER, "Failed to allocate memory");
+    }
+
+    // Validate database name
+    if(!is_valid_identifier(db_name)) {
+        char* invalid_name = db_name;
+        free(cmd);
+        Command* err = parse_error(ER_INVALID_IDENTIFIER, invalid_name);
+        free(invalid_name);
+        return err;
+    }
+
+    strncpy(cmd->data.count.dbName, db_name, MAX_DB_NAME_LENGTH - 1);
+    cmd->data.count.dbName[MAX_DB_NAME_LENGTH - 1] = '\0';
+    free(db_name);
+
+    // Check for extra arguments after db_name (should be none)
+    const char* after_db = skip_whitespace(input);
+    // Skip db_name
+    while(*after_db && !isspace((unsigned char)*after_db)) after_db++;
+    after_db = skip_whitespace(after_db);
+
+    if(*after_db != '\0') {
+        free(cmd);
+        return parse_error(ER_SYNTAX_ERROR, "unexpected arguments after database name");
+    }
 
     return cmd;
 }
