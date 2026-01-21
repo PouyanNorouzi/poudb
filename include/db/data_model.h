@@ -74,4 +74,39 @@ DB* db_create(const char* name, Field* fields, int fieldsCount);
  */
 void db_free(DB* db);
 
+/**
+ * Initialize the database storage system
+ * Must be called before any database operations
+ */
+void init_db_storage(void);
+
+/**
+ * Free all databases and cleanup the storage system
+ */
+void free_db_storage(void);
+
+/**
+ * Add a database to the storage system
+ *
+ * @param db Pointer to the database to add
+ * @return 0 on success, -1 if db is NULL, -2 if duplicate name, -3 if malloc failed
+ */
+int add_db(DB* db);
+
+/**
+ * Find a database by name
+ *
+ * @param name Name of the database to find
+ * @return Pointer to the database, or NULL if not found
+ */
+DB* find_db(const char* name);
+
+/**
+ * Remove a database from storage by name
+ *
+ * @param name Name of the database to remove
+ * @return 0 on success, -1 if not found
+ */
+int remove_db(const char* name);
+
 #endif /* DATA_MODEL_H */

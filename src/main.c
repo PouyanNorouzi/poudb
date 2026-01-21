@@ -3,15 +3,24 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include "db/data_model.h"
 #include "db/operations.h"
 #include "db/parser.h"
 #include "epoll_manager.h"
 #include "net.h"
 #include "utils.h"
+
+/**
+ * Cleanup handler registered with atexit()
+ */
+static void cleanup_handler(void) {
+    free_db_storage();
+}
 
 int main(void) {
     int  serverfd, epollfd, res, i;
@@ -23,6 +32,8 @@ int main(void) {
     EpollEvent events[10];
 
     puts("Starting to make the server");
+    init_db_storage();
+    atexit(cleanup_handler);
 
     res = create_server(DEFAULT_PORT);
     if(res == -1) {
@@ -79,14 +90,23 @@ int main(void) {
                 }
                 command = parse_command(data);
                 if(command != NULL) {
-                    if(command->op == OP_ERROR)
+                    if(command->op == OP_ERROR) {
                         send_data(clientfd,
                                   command->data.error,
                                   MAX_ERROR_LENGTH);
-                    else {
-                        res = execute_command(command);
-
-                        send_int(clientfd, res);
+                    } else {
+                        CommandResult* result = execute_command(command);
+                        
+                        if(result != NULL) {
+                            if(result->message != NULL) {
+                                // Send error message
+                                send_data(clientfd, result->message, strlen(result->message));
+                            } else {
+                                // Send success code
+                                send_int(clientfd, result->code);
+                            }
+                            free(result);
+                        }
                     }
                 }
 
