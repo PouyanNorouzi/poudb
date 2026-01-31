@@ -428,3 +428,317 @@ Test(execute_add, scientific_notation) {
     free(add_result);
     free_command(add_cmd, 1);
 }
+
+// ============================================================================
+// execute_up tests
+// ============================================================================
+
+TestSuite(execute_up, .init = setup, .fini = teardown);
+
+Test(execute_up, update_single_int_value) {
+    // Create database and add a row
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd = parse_command("ADD mydb * (42)");
+    CommandResult* add_result = execute_command(add_cmd);
+    cr_assert_eq(add_result->code, 1);
+    free(add_result);
+    free_command(add_cmd, 1);
+
+    // Update the row
+    Command* up_cmd = parse_command("UP mydb 1 (100)");
+    cr_assert_not_null(up_cmd);
+    cr_assert_eq(up_cmd->op, OP_UP);
+
+    CommandResult* up_result = execute_command(up_cmd);
+    cr_assert_not_null(up_result);
+    cr_assert_eq(up_result->code, 1);  // Returns the key
+    cr_assert_null(up_result->message);
+
+    // Verify the update
+    DB* db = find_db("mydb");
+    cr_assert_eq(db->rows[0].values[1].value.i, 100);
+
+    free(up_result);
+    free_command(up_cmd, 1);
+}
+
+Test(execute_up, update_single_string_value) {
+    Command* create_cmd = parse_command("CREATE mydb (string name)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd = parse_command("ADD mydb * (\"hello\")");
+    CommandResult* add_result = execute_command(add_cmd);
+    free(add_result);
+    free_command(add_cmd, 1);
+
+    Command* up_cmd = parse_command("UP mydb 1 (\"world\")");
+    CommandResult* up_result = execute_command(up_cmd);
+    cr_assert_eq(up_result->code, 1);
+
+    DB* db = find_db("mydb");
+    cr_assert_str_eq(db->rows[0].values[1].value.s, "world");
+
+    free(up_result);
+    free_command(up_cmd, 1);
+}
+
+Test(execute_up, update_multiple_values) {
+    Command* create_cmd = parse_command(
+        "CREATE users (int age, string name, double salary, bool active)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd = parse_command(
+        "ADD users * (25, \"John\", 50000.0, true)");
+    CommandResult* add_result = execute_command(add_cmd);
+    free(add_result);
+    free_command(add_cmd, 1);
+
+    Command* up_cmd = parse_command(
+        "UP users 1 (30, \"Jane\", 60000.0, false)");
+    CommandResult* up_result = execute_command(up_cmd);
+    cr_assert_eq(up_result->code, 1);
+
+    DB* db = find_db("users");
+    cr_assert_eq(db->rows[0].values[1].value.i, 30);
+    cr_assert_str_eq(db->rows[0].values[2].value.s, "Jane");
+    cr_assert_float_eq(db->rows[0].values[3].value.d, 60000.0, 0.01);
+    cr_assert_eq(db->rows[0].values[4].value.b, false);
+
+    free(up_result);
+    free_command(up_cmd, 1);
+}
+
+Test(execute_up, update_with_ignore_flags) {
+    Command* create_cmd = parse_command("CREATE mydb (int a, string b, int c)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd = parse_command("ADD mydb * (10, \"original\", 30)");
+    CommandResult* add_result = execute_command(add_cmd);
+    free(add_result);
+    free_command(add_cmd, 1);
+
+    // Update only first and last fields, ignore middle (string)
+    Command* up_cmd = parse_command("UP mydb 1 (20, _, 40)");
+    CommandResult* up_result = execute_command(up_cmd);
+    cr_assert_eq(up_result->code, 1);
+
+    DB* db = find_db("mydb");
+    cr_assert_eq(db->rows[0].values[1].value.i, 20);  // Updated
+    cr_assert_str_eq(db->rows[0].values[2].value.s, "original");  // Unchanged
+    cr_assert_eq(db->rows[0].values[3].value.i, 40);  // Updated
+
+    free(up_result);
+    free_command(up_cmd, 1);
+}
+
+Test(execute_up, update_ignore_all_fields) {
+    Command* create_cmd = parse_command("CREATE mydb (int a, int b)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd = parse_command("ADD mydb * (10, 20)");
+    CommandResult* add_result = execute_command(add_cmd);
+    free(add_result);
+    free_command(add_cmd, 1);
+
+    // Ignore all fields - row should remain unchanged
+    Command* up_cmd = parse_command("UP mydb 1 (_, _)");
+    CommandResult* up_result = execute_command(up_cmd);
+    cr_assert_eq(up_result->code, 1);
+
+    DB* db = find_db("mydb");
+    cr_assert_eq(db->rows[0].values[1].value.i, 10);
+    cr_assert_eq(db->rows[0].values[2].value.i, 20);
+
+    free(up_result);
+    free_command(up_cmd, 1);
+}
+
+Test(execute_up, update_row_not_found) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd = parse_command("ADD mydb * (42)");
+    CommandResult* add_result = execute_command(add_cmd);
+    free(add_result);
+    free_command(add_cmd, 1);
+
+    // Try to update non-existent key
+    Command* up_cmd = parse_command("UP mydb 999 (100)");
+    CommandResult* up_result = execute_command(up_cmd);
+    cr_assert_eq(up_result->code, -3);
+    cr_assert_not_null(up_result->message);
+
+    free(up_result);
+    free_command(up_cmd, 0);
+}
+
+Test(execute_up, update_database_not_found) {
+    Command* up_cmd = parse_command("UP nonexistent 1 (42)");
+    CommandResult* up_result = execute_command(up_cmd);
+    cr_assert_eq(up_result->code, -1);
+    cr_assert_not_null(up_result->message);
+
+    free(up_result);
+    free_command(up_cmd, 0);
+}
+
+Test(execute_up, update_value_count_mismatch) {
+    Command* create_cmd = parse_command("CREATE mydb (int a, int b)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd = parse_command("ADD mydb * (10, 20)");
+    CommandResult* add_result = execute_command(add_cmd);
+    free(add_result);
+    free_command(add_cmd, 1);
+
+    // Try to update with wrong number of values
+    Command* up_cmd = parse_command("UP mydb 1 (100)");
+    CommandResult* up_result = execute_command(up_cmd);
+    cr_assert_eq(up_result->code, -1);
+    cr_assert_not_null(up_result->message);
+
+    free(up_result);
+    free_command(up_cmd, 0);
+}
+
+Test(execute_up, update_negative_values) {
+    Command* create_cmd = parse_command("CREATE mydb (int value, double amount)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd = parse_command("ADD mydb * (10, 20.0)");
+    CommandResult* add_result = execute_command(add_cmd);
+    free(add_result);
+    free_command(add_cmd, 1);
+
+    Command* up_cmd = parse_command("UP mydb 1 (-42, -3.14)");
+    CommandResult* up_result = execute_command(up_cmd);
+    cr_assert_eq(up_result->code, 1);
+
+    DB* db = find_db("mydb");
+    cr_assert_eq(db->rows[0].values[1].value.i, -42);
+    cr_assert_float_eq(db->rows[0].values[2].value.d, -3.14, 0.01);
+
+    free(up_result);
+    free_command(up_cmd, 1);
+}
+
+Test(execute_up, update_bool_values) {
+    Command* create_cmd = parse_command("CREATE mydb (bool flag1, bool flag2)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd = parse_command("ADD mydb * (true, false)");
+    CommandResult* add_result = execute_command(add_cmd);
+    free(add_result);
+    free_command(add_cmd, 1);
+
+    Command* up_cmd = parse_command("UP mydb 1 (false, true)");
+    CommandResult* up_result = execute_command(up_cmd);
+    cr_assert_eq(up_result->code, 1);
+
+    DB* db = find_db("mydb");
+    cr_assert_eq(db->rows[0].values[1].value.b, false);
+    cr_assert_eq(db->rows[0].values[2].value.b, true);
+
+    free(up_result);
+    free_command(up_cmd, 1);
+}
+
+Test(execute_up, update_empty_string) {
+    Command* create_cmd = parse_command("CREATE mydb (string text)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd = parse_command("ADD mydb * (\"hello\")");
+    CommandResult* add_result = execute_command(add_cmd);
+    free(add_result);
+    free_command(add_cmd, 1);
+
+    Command* up_cmd = parse_command("UP mydb 1 (\"\")");
+    CommandResult* up_result = execute_command(up_cmd);
+    cr_assert_eq(up_result->code, 1);
+
+    DB* db = find_db("mydb");
+    cr_assert_str_eq(db->rows[0].values[1].value.s, "");
+
+    free(up_result);
+    free_command(up_cmd, 1);
+}
+
+Test(execute_up, update_with_explicit_key) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd = parse_command("ADD mydb 100 (42)");
+    CommandResult* add_result = execute_command(add_cmd);
+    free(add_result);
+    free_command(add_cmd, 1);
+
+    Command* up_cmd = parse_command("UP mydb 100 (999)");
+    CommandResult* up_result = execute_command(up_cmd);
+    cr_assert_eq(up_result->code, 100);
+
+    DB* db = find_db("mydb");
+    cr_assert_eq(db->rows[0].values[1].value.i, 999);
+
+    free(up_result);
+    free_command(up_cmd, 1);
+}
+
+Test(execute_up, update_multiple_rows_correct_key) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    // Add three rows
+    Command* add_cmd1 = parse_command("ADD mydb * (10)");
+    CommandResult* add_result1 = execute_command(add_cmd1);
+    free(add_result1);
+    free_command(add_cmd1, 1);
+
+    Command* add_cmd2 = parse_command("ADD mydb * (20)");
+    CommandResult* add_result2 = execute_command(add_cmd2);
+    free(add_result2);
+    free_command(add_cmd2, 1);
+
+    Command* add_cmd3 = parse_command("ADD mydb * (30)");
+    CommandResult* add_result3 = execute_command(add_cmd3);
+    free(add_result3);
+    free_command(add_cmd3, 1);
+
+    // Update only the second row
+    Command* up_cmd = parse_command("UP mydb 2 (200)");
+    CommandResult* up_result = execute_command(up_cmd);
+    cr_assert_eq(up_result->code, 2);
+    free(up_result);
+    free_command(up_cmd, 1);
+
+    // Verify only second row changed
+    DB* db = find_db("mydb");
+    cr_assert_eq(db->rows[0].values[1].value.i, 10);   // Unchanged
+    cr_assert_eq(db->rows[1].values[1].value.i, 200); // Updated
+    cr_assert_eq(db->rows[2].values[1].value.i, 30);  // Unchanged
+}

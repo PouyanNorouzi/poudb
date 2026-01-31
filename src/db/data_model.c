@@ -293,3 +293,172 @@ int db_add_row(DB* db, int key, Data* values, int valueCount) {
 
     return 0;
 }
+
+/**
+ * Get a row from a database by key
+ * Returns a deep copy of the row that the caller must free
+ */
+Row* db_get_row(DB* db, int key) {
+    if(db == NULL) {
+        return NULL;
+    }
+
+    // Find the row with the matching key
+    Row* sourceRow = NULL;
+    for(int i = 0; i < db->rowsCount; i++) {
+        if(db->rows[i].values != NULL &&
+           db->rows[i].values[0].value.i == key) {
+            sourceRow = &db->rows[i];
+            break;
+        }
+    }
+
+    if(sourceRow == NULL) {
+        return NULL;  // Row not found
+    }
+
+    // Allocate the new row structure
+    Row* newRow = (Row*)malloc(sizeof(Row));
+    if(newRow == NULL) {
+        perror("malloc");
+        return NULL;
+    }
+
+    newRow->valueCount = sourceRow->valueCount;
+
+    // Allocate the values array
+    newRow->values = (Data*)malloc(sizeof(Data) * newRow->valueCount);
+    if(newRow->values == NULL) {
+        perror("malloc");
+        free(newRow);
+        return NULL;
+    }
+
+    // Deep copy each value
+    for(int i = 0; i < newRow->valueCount; i++) {
+        newRow->values[i].size = sourceRow->values[i].size;
+
+        if(db->fields[i].type == TYPE_STRING) {
+            // Deep copy string
+            const char* srcStr = sourceRow->values[i].value.s;
+            if(srcStr != NULL) {
+                char* newStr = (char*)malloc(strlen(srcStr) + 1);
+                if(newStr == NULL) {
+                    perror("malloc");
+                    // Free already copied strings
+                    for(int j = 0; j < i; j++) {
+                        if(db->fields[j].type == TYPE_STRING &&
+                           newRow->values[j].value.s != NULL) {
+                            free((void*)newRow->values[j].value.s);
+                        }
+                    }
+                    free(newRow->values);
+                    free(newRow);
+                    return NULL;
+                }
+                strcpy(newStr, srcStr);
+                newRow->values[i].value.s = newStr;
+            } else {
+                newRow->values[i].value.s = NULL;
+            }
+        } else {
+            // Copy non-string values directly
+            newRow->values[i].value = sourceRow->values[i].value;
+        }
+    }
+
+    return newRow;
+}
+
+/**
+ * Update a row in a database by key
+ */
+int db_update_row(DB* db, int key, Data* values, int valueCount, int* ignoreFlags) {
+    if(db == NULL || values == NULL) {
+        return -1;
+    }
+
+    // valueCount should match fieldsCount - 1 (excluding key field)
+    if(valueCount != db->fieldsCount - 1) {
+        fprintf(stderr, "Value count (%d) doesn't match fields count (%d)\n",
+                valueCount, db->fieldsCount - 1);
+        return -2;
+    }
+
+    // Find the row with the matching key
+    Row* targetRow = NULL;
+    for(int i = 0; i < db->rowsCount; i++) {
+        if(db->rows[i].values != NULL &&
+           db->rows[i].values[0].value.i == key) {
+            targetRow = &db->rows[i];
+            break;
+        }
+    }
+
+    if(targetRow == NULL) {
+        return -3;  // Row not found
+    }
+
+    // Update each value (skip key field at index 0)
+    for(int i = 0; i < valueCount; i++) {
+        // Check if this field should be ignored
+        if(ignoreFlags != NULL && ignoreFlags[i]) {
+            continue;
+        }
+
+        int fieldIdx = i + 1;  // Skip key field
+
+        // Handle string fields - free old string and copy new one
+        if(db->fields[fieldIdx].type == TYPE_STRING) {
+            // Free old string if it exists
+            if(targetRow->values[fieldIdx].value.s != NULL) {
+                free((void*)targetRow->values[fieldIdx].value.s);
+            }
+
+            // Copy new string
+            const char* srcStr = values[i].value.s;
+            if(srcStr != NULL) {
+                char* newStr = (char*)malloc(strlen(srcStr) + 1);
+                if(newStr == NULL) {
+                    perror("malloc");
+                    return -4;
+                }
+                strcpy(newStr, srcStr);
+                targetRow->values[fieldIdx].value.s = newStr;
+            } else {
+                targetRow->values[fieldIdx].value.s = NULL;
+            }
+            targetRow->values[fieldIdx].size = values[i].size;
+        } else {
+            // Copy non-string values directly
+            targetRow->values[fieldIdx].size  = values[i].size;
+            targetRow->values[fieldIdx].value = values[i].value;
+        }
+    }
+
+    return 0;
+}
+
+/**
+ * Free a row that was returned by db_get_row
+ */
+void db_free_row(DB* db, Row* row) {
+    if(row == NULL) {
+        return;
+    }
+
+    if(row->values != NULL) {
+        // Free string values if db is provided
+        if(db != NULL) {
+            for(int i = 0; i < row->valueCount; i++) {
+                if(db->fields[i].type == TYPE_STRING &&
+                   row->values[i].value.s != NULL) {
+                    free((void*)row->values[i].value.s);
+                }
+            }
+        }
+        free(row->values);
+    }
+
+    free(row);
+}

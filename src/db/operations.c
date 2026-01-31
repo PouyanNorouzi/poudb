@@ -199,9 +199,70 @@ static CommandResult* execute_up(UpdateData* data) {
     if(result == NULL) {
         return NULL;
     }
-    // TODO: Implement UP operation
-    printf("Executing UP for database: %s\n", data->dbName);
-    result->code    = 0;
+
+    if(data == NULL || data->values == NULL) {
+        result->code    = -1;
+        result->message = EXECUTION_ERROR_MESSAGES[EX_INVALID_DATA];
+        return result;
+    }
+
+    DB* db = find_db(data->dbName);
+    if(db == NULL) {
+        result->code    = -1;
+        result->message = EXECUTION_ERROR_MESSAGES[EX_DB_NOT_FOUND];
+        return result;
+    }
+
+    // valueCount should match fieldsCount - 1 (excluding auto-generated key)
+    if(db->fieldsCount - 1 != data->valueCount) {
+        result->code    = -1;
+        result->message = EXECUTION_ERROR_MESSAGES[EX_TYPE_MISMATCH];
+        return result;
+    }
+
+    // Validate that non-ignored value types match field types
+    for(int i = 0; i < data->valueCount; i++) {
+        if(data->ignoreFlags != NULL && data->ignoreFlags[i]) {
+            continue;  // Skip validation for ignored fields
+        }
+        // Create a temporary single-value array for validation
+        Data singleValue = data->values[i];
+        int fieldIdx = i + 1;  // Skip key field
+        FieldType expectedType = db->fields[fieldIdx].type;
+
+        int valid = 0;
+        switch(expectedType) {
+            case TYPE_INT:    valid = (singleValue.size == -2); break;
+            case TYPE_DOUBLE: valid = (singleValue.size == -1); break;
+            case TYPE_BOOL:   valid = (singleValue.size == 0);  break;
+            case TYPE_STRING: valid = (singleValue.size >= 0);  break;
+            default: valid = 0;
+        }
+
+        if(!valid) {
+            result->code    = -1;
+            result->message = EXECUTION_ERROR_MESSAGES[EX_TYPE_MISMATCH];
+            return result;
+        }
+    }
+
+    int update_result = db_update_row(db, data->key, data->values,
+                                       data->valueCount, data->ignoreFlags);
+    if(update_result != 0) {
+        result->code = update_result;
+        if(update_result == -3) {
+            result->message = EXECUTION_ERROR_MESSAGES[EX_ROW_NOT_FOUND];
+        } else if(update_result == -4) {
+            result->message =
+                EXECUTION_ERROR_MESSAGES[EX_MEMORY_ALLOCATION_FAILED];
+        } else {
+            result->message = EXECUTION_ERROR_MESSAGES[EX_UNKNOWN_ERROR];
+        }
+        return result;
+    }
+
+    printf("Updated row in database '%s' (key: %d)\n", data->dbName, data->key);
+    result->code    = data->key;
     result->message = NULL;
     return result;
 }

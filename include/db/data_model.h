@@ -125,4 +125,36 @@ int remove_db(const char* name);
  */
 int db_add_row(DB* db, int key, Data* values, int valueCount);
 
+/**
+ * Get a row from a database by key
+ * Returns a deep copy of the row that the caller must free
+ *
+ * @param db Pointer to the database
+ * @param key The key of the row to retrieve
+ * @return Pointer to a copied Row, or NULL if not found or on error
+ *         (caller must free the returned Row and its values)
+ */
+Row* db_get_row(DB* db, int key);
+
+/**
+ * Update a row in a database by key
+ *
+ * @param db Pointer to the database
+ * @param key The key of the row to update
+ * @param values Array of Data values for the row (excluding key)
+ * @param valueCount Number of values in the array
+ * @param ignoreFlags Array of flags (1 = skip this field, 0 = update it), or NULL to update all
+ * @return 0 on success, -1 if db/values is NULL, -2 if valueCount mismatch,
+ *         -3 if row not found, -4 if malloc failed
+ */
+int db_update_row(DB* db, int key, Data* values, int valueCount, int* ignoreFlags);
+
+/**
+ * Free a row that was returned by db_get_row
+ *
+ * @param db Pointer to the database (needed for field type info)
+ * @param row Pointer to the row to free
+ */
+void db_free_row(DB* db, Row* row);
+
 #endif /* DATA_MODEL_H */
