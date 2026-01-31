@@ -17,14 +17,8 @@ typedef struct DBNode {
  */
 static DBNode* db_list_head = NULL;
 
-/**
- * Initialize the database storage system
- */
 void init_db_storage(void) { db_list_head = NULL; }
 
-/**
- * Free all databases and cleanup the storage system
- */
 void free_db_storage(void) {
     DBNode* current = db_list_head;
     DBNode* next;
@@ -43,9 +37,6 @@ void free_db_storage(void) {
     db_list_head = NULL;
 }
 
-/**
- * Add a database to the storage system
- */
 int add_db(DB* db) {
     if(db == NULL) {
         return -1;
@@ -71,9 +62,6 @@ int add_db(DB* db) {
     return 0;
 }
 
-/**
- * Find a database by name
- */
 DB* find_db(const char* name) {
     if(name == NULL) {
         return NULL;
@@ -91,9 +79,6 @@ DB* find_db(const char* name) {
     return NULL;
 }
 
-/**
- * Remove a database from storage by name
- */
 int remove_db(const char* name) {
     if(name == NULL) {
         return -1;
@@ -126,10 +111,6 @@ int remove_db(const char* name) {
     return -1;  // Not found
 }
 
-/**
- * Create a new database with the given name and fields
- * Automatically adds a 'key' field as the first field (unsigned int)
- */
 DB* db_create(const char* name, Field* fields, int fieldsCount) {
     if(name == NULL || fields == NULL || fieldsCount <= 0) {
         return NULL;
@@ -147,7 +128,7 @@ DB* db_create(const char* name, Field* fields, int fieldsCount) {
 
     // Allocate fields array with extra slot for auto-generated key field
     int totalFields = fieldsCount + 1;
-    db->fields = (Field*)malloc(sizeof(Field) * totalFields);
+    db->fields      = (Field*)malloc(sizeof(Field) * totalFields);
     if(db->fields == NULL) {
         perror("malloc");
         free(db);
@@ -157,7 +138,7 @@ DB* db_create(const char* name, Field* fields, int fieldsCount) {
     // First field is always the auto-generated key
     strncpy(db->fields[0].name, "key", MAX_FIELD_NAME_LENGTH - 1);
     db->fields[0].name[MAX_FIELD_NAME_LENGTH - 1] = '\0';
-    db->fields[0].type = TYPE_INT;
+    db->fields[0].type                            = TYPE_INT;
 
     // Copy user-provided fields after the key field
     memcpy(&db->fields[1], fields, sizeof(Field) * fieldsCount);
@@ -179,9 +160,6 @@ DB* db_create(const char* name, Field* fields, int fieldsCount) {
     return db;
 }
 
-/**
- * Free all resources associated with a database
- */
 void db_free(DB* db) {
     if(db == NULL) {
         return;
@@ -213,11 +191,6 @@ void db_free(DB* db) {
     free(db);
 }
 
-/**
- * Add a row to a database
- * Key is provided separately; if negative, auto-generates key using nextKey
- * Values array does not include the key
- */
 int db_add_row(DB* db, int key, Data* values, int valueCount) {
     if(db == NULL || values == NULL) {
         return -1;
@@ -225,14 +198,18 @@ int db_add_row(DB* db, int key, Data* values, int valueCount) {
 
     // valueCount should match fieldsCount - 1 (excluding key field)
     if(valueCount != db->fieldsCount - 1) {
-        fprintf(stderr, "Value count (%d) doesn't match fields count (%d)\n",
-                valueCount, db->fieldsCount - 1);
+        fprintf(stderr,
+                "Value count (%d) doesn't match fields count (%d)\n",
+                valueCount,
+                db->fieldsCount - 1);
         return -2;
     }
 
     // Check if we've reached max capacity
     if(db->rowsCount >= MAX_ROW_CAPACITY) {
-        fprintf(stderr, "Maximum row capacity (%d) reached\n", MAX_ROW_CAPACITY);
+        fprintf(stderr,
+                "Maximum row capacity (%d) reached\n",
+                MAX_ROW_CAPACITY);
         return -3;
     }
 
@@ -281,7 +258,7 @@ int db_add_row(DB* db, int key, Data* values, int valueCount) {
 
     // Copy user values (transfer ownership of strings - no duplication needed)
     for(int i = 0; i < valueCount; i++) {
-        int fieldIdx             = i + 1;  // Skip key field
+        int fieldIdx              = i + 1;  // Skip key field
         rowValues[fieldIdx].size  = values[i].size;
         rowValues[fieldIdx].value = values[i].value;
     }
@@ -294,10 +271,6 @@ int db_add_row(DB* db, int key, Data* values, int valueCount) {
     return 0;
 }
 
-/**
- * Get a row from a database by key
- * Returns a deep copy of the row that the caller must free
- */
 Row* db_get_row(DB* db, int key) {
     if(db == NULL) {
         return NULL;
@@ -306,8 +279,7 @@ Row* db_get_row(DB* db, int key) {
     // Find the row with the matching key
     Row* sourceRow = NULL;
     for(int i = 0; i < db->rowsCount; i++) {
-        if(db->rows[i].values != NULL &&
-           db->rows[i].values[0].value.i == key) {
+        if(db->rows[i].values != NULL && db->rows[i].values[0].value.i == key) {
             sourceRow = &db->rows[i];
             break;
         }
@@ -370,26 +342,28 @@ Row* db_get_row(DB* db, int key) {
     return newRow;
 }
 
-/**
- * Update a row in a database by key
- */
-int db_update_row(DB* db, int key, Data* values, int valueCount, int* ignoreFlags) {
+int db_update_row(DB*   db,
+                  int   key,
+                  Data* values,
+                  int   valueCount,
+                  int*  ignoreFlags) {
     if(db == NULL || values == NULL) {
         return -1;
     }
 
     // valueCount should match fieldsCount - 1 (excluding key field)
     if(valueCount != db->fieldsCount - 1) {
-        fprintf(stderr, "Value count (%d) doesn't match fields count (%d)\n",
-                valueCount, db->fieldsCount - 1);
+        fprintf(stderr,
+                "Value count (%d) doesn't match fields count (%d)\n",
+                valueCount,
+                db->fieldsCount - 1);
         return -2;
     }
 
     // Find the row with the matching key
     Row* targetRow = NULL;
     for(int i = 0; i < db->rowsCount; i++) {
-        if(db->rows[i].values != NULL &&
-           db->rows[i].values[0].value.i == key) {
+        if(db->rows[i].values != NULL && db->rows[i].values[0].value.i == key) {
             targetRow = &db->rows[i];
             break;
         }
@@ -439,9 +413,6 @@ int db_update_row(DB* db, int key, Data* values, int valueCount, int* ignoreFlag
     return 0;
 }
 
-/**
- * Free a row that was returned by db_get_row
- */
 void db_free_row(DB* db, Row* row) {
     if(row == NULL) {
         return;
