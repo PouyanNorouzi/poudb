@@ -25,6 +25,7 @@ typedef enum {
 typedef struct {
     int         code;    /* Return code (positive for success, negative for error) */
     const char* message; /* Error message (NULL on success) */
+    char*       data;    /* Result data string (caller must free if not NULL) */
 } CommandResult;
 
 /**
@@ -34,5 +35,12 @@ typedef struct {
  * @return CommandResult pointer with code and error message (caller must free)
  */
 CommandResult* execute_command(Command* cmd);
+
+/**
+ * Free a CommandResult and its data
+ *
+ * @param result Pointer to the CommandResult to free
+ */
+void free_command_result(CommandResult* result);
 
 #endif //OPERATIONS_H

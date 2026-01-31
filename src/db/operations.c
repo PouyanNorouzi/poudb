@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include "db/data_model.h"
@@ -35,6 +36,8 @@ static CommandResult* execute_search(SearchData* data);
 static CommandResult* execute_count(CountData* data);
 static CommandResult* execute_create_index(CreateIndexData* data);
 static int validate_value_types(DB* db, Data* values, int valueCount);
+static char* format_row_as_table(DB* db, Row* row, char** fields, int fieldCount);
+static int find_field_index(DB* db, const char* fieldName);
 
 /**
  * Execute a parsed command
@@ -80,6 +83,16 @@ CommandResult* execute_command(Command* cmd) {
             result->message = EXECUTION_ERROR_MESSAGES[EX_UNKNOWN_ERROR];
             return result;
     }
+}
+
+void free_command_result(CommandResult* result) {
+    if(result == NULL) {
+        return;
+    }
+    if(result->data != NULL) {
+        free(result->data);
+    }
+    free(result);
 }
 
 /**
@@ -133,6 +146,7 @@ static CommandResult* execute_create(CreateData* data) {
            data->fieldCount);
     result->code    = data->fieldCount;
     result->message = NULL;
+    result->data    = NULL;
     return result;
 }
 
@@ -188,6 +202,7 @@ static CommandResult* execute_add(AddData* data) {
            db->rows[db->rowsCount - 1].values[0].value.i);
     result->code    = db->rows[db->rowsCount - 1].values[0].value.i;
     result->message = NULL;
+    result->data    = NULL;
     return result;
 }
 
@@ -264,6 +279,7 @@ static CommandResult* execute_up(UpdateData* data) {
     printf("Updated row in database '%s' (key: %d)\n", data->dbName, data->key);
     result->code    = data->key;
     result->message = NULL;
+    result->data    = NULL;
     return result;
 }
 
@@ -275,10 +291,53 @@ static CommandResult* execute_get(GetData* data) {
     if(result == NULL) {
         return NULL;
     }
-    // TODO: Implement GET operation
-    printf("Executing GET for database: %s\n", data->dbName);
-    result->code    = 0;
+    result->data = NULL;
+
+    if(data == NULL) {
+        result->code    = -1;
+        result->message = EXECUTION_ERROR_MESSAGES[EX_INVALID_DATA];
+        return result;
+    }
+
+    DB* db = find_db(data->dbName);
+    if(db == NULL) {
+        result->code    = -1;
+        result->message = EXECUTION_ERROR_MESSAGES[EX_DB_NOT_FOUND];
+        return result;
+    }
+
+    // Validate field names if specific fields are requested
+    if(data->fields != NULL && data->fieldCount > 0) {
+        for(int i = 0; i < data->fieldCount; i++) {
+            if(find_field_index(db, data->fields[i]) == -1) {
+                result->code    = -1;
+                result->message = EXECUTION_ERROR_MESSAGES[EX_INVALID_FIELD];
+                return result;
+            }
+        }
+    }
+
+    // Get the row
+    Row* row = db_get_row(db, data->key);
+    if(row == NULL) {
+        result->code    = -1;
+        result->message = EXECUTION_ERROR_MESSAGES[EX_ROW_NOT_FOUND];
+        return result;
+    }
+
+    // Format the row as a table
+    char* table = format_row_as_table(db, row, data->fields, data->fieldCount);
+    db_free_row(db, row);
+
+    if(table == NULL) {
+        result->code    = -1;
+        result->message = EXECUTION_ERROR_MESSAGES[EX_MEMORY_ALLOCATION_FAILED];
+        return result;
+    }
+
+    result->code    = data->key;
     result->message = NULL;
+    result->data    = table;
     return result;
 }
 
@@ -423,4 +482,182 @@ static int validate_value_types(DB* db, Data* values, int valueCount) {
     }
 
     return 0;
+}
+
+static int find_field_index(DB* db, const char* fieldName) {
+    if(db == NULL || fieldName == NULL) {
+        return -1;
+    }
+    for(int i = 0; i < db->fieldsCount; i++) {
+        if(strcmp(db->fields[i].name, fieldName) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static char* format_row_as_table(DB* db, Row* row, char** fields, int fieldCount) {
+    if(db == NULL || row == NULL) {
+        return NULL;
+    }
+
+    // Determine which fields to include
+    int* fieldIndices = NULL;
+    int  numFields    = 0;
+
+    if(fields == NULL || fieldCount == 0) {
+        // Include all fields
+        numFields    = db->fieldsCount;
+        fieldIndices = (int*)malloc(sizeof(int) * numFields);
+        if(fieldIndices == NULL) {
+            return NULL;
+        }
+        for(int i = 0; i < numFields; i++) {
+            fieldIndices[i] = i;
+        }
+    } else {
+        // Include only specified fields
+        numFields    = fieldCount;
+        fieldIndices = (int*)malloc(sizeof(int) * numFields);
+        if(fieldIndices == NULL) {
+            return NULL;
+        }
+        for(int i = 0; i < numFields; i++) {
+            fieldIndices[i] = find_field_index(db, fields[i]);
+        }
+    }
+
+    // Calculate column widths
+    int* colWidths = (int*)malloc(sizeof(int) * numFields);
+    if(colWidths == NULL) {
+        free(fieldIndices);
+        return NULL;
+    }
+
+    // Buffer for converting values to strings
+    char valueBuf[256];
+
+    for(int i = 0; i < numFields; i++) {
+        int idx = fieldIndices[i];
+        // Start with header width
+        colWidths[i] = strlen(db->fields[idx].name);
+
+        // Check value width
+        Data* val = &row->values[idx];
+        int   valLen;
+        switch(db->fields[idx].type) {
+            case TYPE_INT:
+                snprintf(valueBuf, sizeof(valueBuf), "%d", val->value.i);
+                valLen = strlen(valueBuf);
+                break;
+            case TYPE_DOUBLE:
+                snprintf(valueBuf, sizeof(valueBuf), "%.6g", val->value.d);
+                valLen = strlen(valueBuf);
+                break;
+            case TYPE_BOOL:
+                valLen = val->value.b ? 4 : 5;  // "true" or "false"
+                break;
+            case TYPE_STRING:
+                valLen = val->value.s ? strlen(val->value.s) : 4;  // "NULL"
+                break;
+            default:
+                valLen = 1;
+        }
+        if(valLen > colWidths[i]) {
+            colWidths[i] = valLen;
+        }
+    }
+
+    // Calculate total line width: | col1 | col2 | ... |
+    int lineWidth = 1;  // Leading |
+    for(int i = 0; i < numFields; i++) {
+        lineWidth += colWidths[i] + 3;  // " value |"
+    }
+
+    // Allocate buffer for the table (header + separator + data + null)
+    // 3 lines: header, separator, data row
+    int bufSize = (lineWidth + 1) * 3 + 1;  // +1 for newlines and null
+    char* table = (char*)malloc(bufSize);
+    if(table == NULL) {
+        free(colWidths);
+        free(fieldIndices);
+        return NULL;
+    }
+
+    char* ptr = table;
+
+    // Build header line
+    *ptr++ = '|';
+    for(int i = 0; i < numFields; i++) {
+        int idx = fieldIndices[i];
+        int padding = colWidths[i] - strlen(db->fields[idx].name);
+        *ptr++ = ' ';
+        strcpy(ptr, db->fields[idx].name);
+        ptr += strlen(db->fields[idx].name);
+        for(int j = 0; j < padding; j++) {
+            *ptr++ = ' ';
+        }
+        *ptr++ = ' ';
+        *ptr++ = '|';
+    }
+    *ptr++ = '\n';
+
+    // Build separator line
+    *ptr++ = '|';
+    for(int i = 0; i < numFields; i++) {
+        *ptr++ = '-';
+        for(int j = 0; j < colWidths[i]; j++) {
+            *ptr++ = '-';
+        }
+        *ptr++ = '-';
+        *ptr++ = '|';
+    }
+    *ptr++ = '\n';
+
+    // Build data line
+    *ptr++ = '|';
+    for(int i = 0; i < numFields; i++) {
+        int   idx = fieldIndices[i];
+        Data* val = &row->values[idx];
+
+        switch(db->fields[idx].type) {
+            case TYPE_INT:
+                snprintf(valueBuf, sizeof(valueBuf), "%d", val->value.i);
+                break;
+            case TYPE_DOUBLE:
+                snprintf(valueBuf, sizeof(valueBuf), "%.6g", val->value.d);
+                break;
+            case TYPE_BOOL:
+                strcpy(valueBuf, val->value.b ? "true" : "false");
+                break;
+            case TYPE_STRING:
+                if(val->value.s) {
+                    snprintf(valueBuf, sizeof(valueBuf), "%s", val->value.s);
+                } else {
+                    strcpy(valueBuf, "NULL");
+                }
+                break;
+            default:
+                strcpy(valueBuf, "?");
+        }
+
+        int valLen  = strlen(valueBuf);
+        int padding = colWidths[i] - valLen;
+
+        *ptr++ = ' ';
+        strcpy(ptr, valueBuf);
+        ptr += valLen;
+        for(int j = 0; j < padding; j++) {
+            *ptr++ = ' ';
+        }
+        *ptr++ = ' ';
+        *ptr++ = '|';
+    }
+    *ptr++ = '\n';
+    *ptr   = '\0';
+
+    free(colWidths);
+    free(fieldIndices);
+
+    return table;
 }

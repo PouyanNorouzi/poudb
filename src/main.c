@@ -103,11 +103,14 @@ int main(void) {
                             if(result->message != NULL) {
                                 // Send error message
                                 send_data(clientfd, result->message, strlen(result->message));
+                            } else if(result->data != NULL) {
+                                // Send result data (e.g., table from GET)
+                                send_data(clientfd, result->data, strlen(result->data));
                             } else {
                                 // Send success code
                                 send_int(clientfd, result->code);
                             }
-                            free(result);
+                            free_command_result(result);
                         }
                         // Strings transferred to DB for ADD/UP operations
                         int transferred = (command->op == OP_ADD || command->op == OP_UP);

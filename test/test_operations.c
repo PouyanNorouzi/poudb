@@ -1,5 +1,6 @@
 #include <criterion/criterion.h>
 #include <criterion/new/assert.h>
+#include <string.h>
 
 #include "db/data_model.h"
 #include "db/operations.h"
@@ -741,4 +742,299 @@ Test(execute_up, update_multiple_rows_correct_key) {
     cr_assert_eq(db->rows[0].values[1].value.i, 10);   // Unchanged
     cr_assert_eq(db->rows[1].values[1].value.i, 200); // Updated
     cr_assert_eq(db->rows[2].values[1].value.i, 30);  // Unchanged
+}
+
+// ============================================================================
+// execute_get tests
+// ============================================================================
+
+TestSuite(execute_get, .init = setup, .fini = teardown);
+
+Test(execute_get, get_single_int_field) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free_command_result(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd = parse_command("ADD mydb * (42)");
+    CommandResult* add_result = execute_command(add_cmd);
+    free_command_result(add_result);
+    free_command(add_cmd, 1);
+
+    Command* get_cmd = parse_command("GET mydb 1");
+    cr_assert_not_null(get_cmd);
+    cr_assert_eq(get_cmd->op, OP_GET);
+
+    CommandResult* get_result = execute_command(get_cmd);
+    cr_assert_not_null(get_result);
+    cr_assert_eq(get_result->code, 1);
+    cr_assert_null(get_result->message);
+    cr_assert_not_null(get_result->data);
+
+    // Check that table contains key and value
+    cr_assert(strstr(get_result->data, "key") != NULL);
+    cr_assert(strstr(get_result->data, "value") != NULL);
+    cr_assert(strstr(get_result->data, "1") != NULL);
+    cr_assert(strstr(get_result->data, "42") != NULL);
+
+    free_command_result(get_result);
+    free_command(get_cmd, 0);
+}
+
+Test(execute_get, get_all_fields_default) {
+    Command* create_cmd = parse_command(
+        "CREATE users (int age, string name, double salary, bool active)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free_command_result(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd = parse_command(
+        "ADD users * (25, \"John Doe\", 50000.5, true)");
+    CommandResult* add_result = execute_command(add_cmd);
+    free_command_result(add_result);
+    free_command(add_cmd, 1);
+
+    Command* get_cmd = parse_command("GET users 1");
+    CommandResult* get_result = execute_command(get_cmd);
+    cr_assert_eq(get_result->code, 1);
+    cr_assert_not_null(get_result->data);
+
+    // Check all fields are in table
+    cr_assert(strstr(get_result->data, "key") != NULL);
+    cr_assert(strstr(get_result->data, "age") != NULL);
+    cr_assert(strstr(get_result->data, "name") != NULL);
+    cr_assert(strstr(get_result->data, "salary") != NULL);
+    cr_assert(strstr(get_result->data, "active") != NULL);
+
+    // Check values
+    cr_assert(strstr(get_result->data, "25") != NULL);
+    cr_assert(strstr(get_result->data, "John Doe") != NULL);
+    cr_assert(strstr(get_result->data, "50000.5") != NULL);
+    cr_assert(strstr(get_result->data, "true") != NULL);
+
+    free_command_result(get_result);
+    free_command(get_cmd, 0);
+}
+
+Test(execute_get, get_specific_fields) {
+    Command* create_cmd = parse_command(
+        "CREATE users (int age, string name, double salary)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free_command_result(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd = parse_command("ADD users * (30, \"Jane\", 75000.0)");
+    CommandResult* add_result = execute_command(add_cmd);
+    free_command_result(add_result);
+    free_command(add_cmd, 1);
+
+    // Request only name and salary
+    Command* get_cmd = parse_command("GET users 1 (name, salary)");
+    CommandResult* get_result = execute_command(get_cmd);
+    cr_assert_eq(get_result->code, 1);
+    cr_assert_not_null(get_result->data);
+
+    // Check requested fields are present
+    cr_assert(strstr(get_result->data, "name") != NULL);
+    cr_assert(strstr(get_result->data, "salary") != NULL);
+    cr_assert(strstr(get_result->data, "Jane") != NULL);
+    cr_assert(strstr(get_result->data, "75000") != NULL);
+
+    free_command_result(get_result);
+    free_command(get_cmd, 0);
+}
+
+Test(execute_get, get_only_key_field) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free_command_result(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd = parse_command("ADD mydb * (100)");
+    CommandResult* add_result = execute_command(add_cmd);
+    free_command_result(add_result);
+    free_command(add_cmd, 1);
+
+    Command* get_cmd = parse_command("GET mydb 1 (key)");
+    CommandResult* get_result = execute_command(get_cmd);
+    cr_assert_eq(get_result->code, 1);
+    cr_assert_not_null(get_result->data);
+
+    cr_assert(strstr(get_result->data, "key") != NULL);
+    cr_assert(strstr(get_result->data, "1") != NULL);
+
+    free_command_result(get_result);
+    free_command(get_cmd, 0);
+}
+
+Test(execute_get, get_row_not_found) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free_command_result(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd = parse_command("ADD mydb * (42)");
+    CommandResult* add_result = execute_command(add_cmd);
+    free_command_result(add_result);
+    free_command(add_cmd, 1);
+
+    // Try to get non-existent key
+    Command* get_cmd = parse_command("GET mydb 999");
+    CommandResult* get_result = execute_command(get_cmd);
+    cr_assert_eq(get_result->code, -1);
+    cr_assert_not_null(get_result->message);
+    cr_assert_null(get_result->data);
+
+    free_command_result(get_result);
+    free_command(get_cmd, 0);
+}
+
+Test(execute_get, get_database_not_found) {
+    Command* get_cmd = parse_command("GET nonexistent 1");
+    CommandResult* get_result = execute_command(get_cmd);
+    cr_assert_eq(get_result->code, -1);
+    cr_assert_not_null(get_result->message);
+    cr_assert_null(get_result->data);
+
+    free_command_result(get_result);
+    free_command(get_cmd, 0);
+}
+
+Test(execute_get, get_invalid_field) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free_command_result(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd = parse_command("ADD mydb * (42)");
+    CommandResult* add_result = execute_command(add_cmd);
+    free_command_result(add_result);
+    free_command(add_cmd, 1);
+
+    Command* get_cmd = parse_command("GET mydb 1 (nonexistent)");
+    CommandResult* get_result = execute_command(get_cmd);
+    cr_assert_eq(get_result->code, -1);
+    cr_assert_not_null(get_result->message);
+
+    free_command_result(get_result);
+    free_command(get_cmd, 0);
+}
+
+Test(execute_get, get_with_explicit_key) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free_command_result(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd = parse_command("ADD mydb 100 (42)");
+    CommandResult* add_result = execute_command(add_cmd);
+    free_command_result(add_result);
+    free_command(add_cmd, 1);
+
+    Command* get_cmd = parse_command("GET mydb 100");
+    CommandResult* get_result = execute_command(get_cmd);
+    cr_assert_eq(get_result->code, 100);
+    cr_assert_not_null(get_result->data);
+
+    cr_assert(strstr(get_result->data, "100") != NULL);
+    cr_assert(strstr(get_result->data, "42") != NULL);
+
+    free_command_result(get_result);
+    free_command(get_cmd, 0);
+}
+
+Test(execute_get, get_empty_string_value) {
+    Command* create_cmd = parse_command("CREATE mydb (string text)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free_command_result(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd = parse_command("ADD mydb * (\"\")");
+    CommandResult* add_result = execute_command(add_cmd);
+    free_command_result(add_result);
+    free_command(add_cmd, 1);
+
+    Command* get_cmd = parse_command("GET mydb 1");
+    CommandResult* get_result = execute_command(get_cmd);
+    cr_assert_eq(get_result->code, 1);
+    cr_assert_not_null(get_result->data);
+
+    free_command_result(get_result);
+    free_command(get_cmd, 0);
+}
+
+Test(execute_get, get_bool_false_value) {
+    Command* create_cmd = parse_command("CREATE mydb (bool flag)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free_command_result(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd = parse_command("ADD mydb * (false)");
+    CommandResult* add_result = execute_command(add_cmd);
+    free_command_result(add_result);
+    free_command(add_cmd, 1);
+
+    Command* get_cmd = parse_command("GET mydb 1");
+    CommandResult* get_result = execute_command(get_cmd);
+    cr_assert_eq(get_result->code, 1);
+    cr_assert_not_null(get_result->data);
+    cr_assert(strstr(get_result->data, "false") != NULL);
+
+    free_command_result(get_result);
+    free_command(get_cmd, 0);
+}
+
+Test(execute_get, get_negative_values) {
+    Command* create_cmd = parse_command("CREATE mydb (int value, double amount)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free_command_result(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd = parse_command("ADD mydb * (-42, -3.14)");
+    CommandResult* add_result = execute_command(add_cmd);
+    free_command_result(add_result);
+    free_command(add_cmd, 1);
+
+    Command* get_cmd = parse_command("GET mydb 1");
+    CommandResult* get_result = execute_command(get_cmd);
+    cr_assert_eq(get_result->code, 1);
+    cr_assert_not_null(get_result->data);
+    cr_assert(strstr(get_result->data, "-42") != NULL);
+    cr_assert(strstr(get_result->data, "-3.14") != NULL);
+
+    free_command_result(get_result);
+    free_command(get_cmd, 0);
+}
+
+Test(execute_get, get_from_multiple_rows) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free_command_result(create_result);
+    free_command(create_cmd, 0);
+
+    // Add three rows
+    Command* add_cmd1 = parse_command("ADD mydb * (10)");
+    CommandResult* add_result1 = execute_command(add_cmd1);
+    free_command_result(add_result1);
+    free_command(add_cmd1, 1);
+
+    Command* add_cmd2 = parse_command("ADD mydb * (20)");
+    CommandResult* add_result2 = execute_command(add_cmd2);
+    free_command_result(add_result2);
+    free_command(add_cmd2, 1);
+
+    Command* add_cmd3 = parse_command("ADD mydb * (30)");
+    CommandResult* add_result3 = execute_command(add_cmd3);
+    free_command_result(add_result3);
+    free_command(add_cmd3, 1);
+
+    // Get the second row
+    Command* get_cmd = parse_command("GET mydb 2");
+    CommandResult* get_result = execute_command(get_cmd);
+    cr_assert_eq(get_result->code, 2);
+    cr_assert_not_null(get_result->data);
+    cr_assert(strstr(get_result->data, "20") != NULL);
+
+    free_command_result(get_result);
+    free_command(get_cmd, 0);
 }
