@@ -150,6 +150,15 @@ Row* db_get_row(DB* db, int key);
 int db_update_row(DB* db, int key, Data* values, int valueCount, int* ignoreFlags);
 
 /**
+ * Delete a row from a database by key
+ *
+ * @param db Pointer to the database
+ * @param key The key of the row to delete
+ * @return 0 on success, -1 if db is NULL, -2 if row not found
+ */
+int db_delete_row(DB* db, int key);
+
+/**
  * Free a row that was returned by db_get_row
  *
  * @param db Pointer to the database (needed for field type info)

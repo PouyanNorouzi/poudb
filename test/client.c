@@ -79,7 +79,7 @@ int main(void) {
         bytes_read = recv(clientfd, buffer, BUFFER_SIZE - 1, 0);
         if (bytes_read > 0) {
             buffer[bytes_read] = '\0'; // Null-terminate
-            printf("Server response: %s\n", buffer);
+            printf("%s\n", buffer);
         } else if (bytes_read == 0) {
             printf("Server closed the connection\n");
             break;

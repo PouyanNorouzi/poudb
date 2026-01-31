@@ -17,6 +17,8 @@ typedef struct DBNode {
  */
 static DBNode* db_list_head = NULL;
 
+static Row* find_row(DB* db, int key);
+
 void init_db_storage(void) { db_list_head = NULL; }
 
 void free_db_storage(void) {
@@ -277,14 +279,7 @@ Row* db_get_row(DB* db, int key) {
     }
 
     // Find the row with the matching key
-    Row* sourceRow = NULL;
-    for(int i = 0; i < db->rowsCount; i++) {
-        if(db->rows[i].values != NULL && db->rows[i].values[0].value.i == key) {
-            sourceRow = &db->rows[i];
-            break;
-        }
-    }
-
+    Row* sourceRow = find_row(db, key);
     if(sourceRow == NULL) {
         return NULL;  // Row not found
     }
@@ -361,14 +356,7 @@ int db_update_row(DB*   db,
     }
 
     // Find the row with the matching key
-    Row* targetRow = NULL;
-    for(int i = 0; i < db->rowsCount; i++) {
-        if(db->rows[i].values != NULL && db->rows[i].values[0].value.i == key) {
-            targetRow = &db->rows[i];
-            break;
-        }
-    }
-
+    Row* targetRow = find_row(db, key);
     if(targetRow == NULL) {
         return -3;  // Row not found
     }
@@ -413,6 +401,41 @@ int db_update_row(DB*   db,
     return 0;
 }
 
+int db_delete_row(DB* db, int key) {
+    if(db == NULL) {
+        return -1;
+    }
+
+    // Find the row with the matching key
+    Row* rowToDelete = find_row(db, key);
+    if(rowToDelete == NULL) {
+        return -2;  // Row not found
+    }
+
+    // Calculate the index for shifting
+    int rowIndex = rowToDelete - db->rows;
+
+    // Free the row's values (including strings)
+    if(rowToDelete->values != NULL) {
+        for(int j = 0; j < rowToDelete->valueCount; j++) {
+            if(db->fields[j].type == TYPE_STRING &&
+               rowToDelete->values[j].value.s != NULL) {
+                free((void*)rowToDelete->values[j].value.s);
+            }
+        }
+        free(rowToDelete->values);
+    }
+
+    // Shift all subsequent rows down by one
+    for(int i = rowIndex; i < db->rowsCount - 1; i++) {
+        db->rows[i] = db->rows[i + 1];
+    }
+
+    db->rowsCount--;
+
+    return 0;
+}
+
 void db_free_row(DB* db, Row* row) {
     if(row == NULL) {
         return;
@@ -432,4 +455,18 @@ void db_free_row(DB* db, Row* row) {
     }
 
     free(row);
+}
+
+static Row* find_row(DB* db, int key) {
+    if(db == NULL) {
+        return NULL;
+    }
+
+    for(int i = 0; i < db->rowsCount; i++) {
+        if(db->rows[i].values != NULL && db->rows[i].values[0].value.i == key) {
+            return &db->rows[i];
+        }
+    }
+
+    return NULL;
 }

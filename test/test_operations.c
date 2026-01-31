@@ -1038,3 +1038,280 @@ Test(execute_get, get_from_multiple_rows) {
     free_command_result(get_result);
     free_command(get_cmd, 0);
 }
+
+// ============================================================================
+// execute_del tests
+// ============================================================================
+
+TestSuite(execute_del, .init = setup, .fini = teardown);
+
+Test(execute_del, delete_single_row) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free_command_result(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd = parse_command("ADD mydb * (42)");
+    CommandResult* add_result = execute_command(add_cmd);
+    free_command_result(add_result);
+    free_command(add_cmd, 1);
+
+    Command* del_cmd = parse_command("DEL mydb 1");
+    cr_assert_not_null(del_cmd);
+    cr_assert_eq(del_cmd->op, OP_DEL);
+
+    CommandResult* del_result = execute_command(del_cmd);
+    cr_assert_not_null(del_result);
+    cr_assert_eq(del_result->code, 1);
+    cr_assert_null(del_result->message);
+
+    // Verify row was deleted
+    DB* db = find_db("mydb");
+    cr_assert_eq(db->rowsCount, 0);
+
+    free_command_result(del_result);
+    free_command(del_cmd, 0);
+}
+
+Test(execute_del, delete_from_multiple_rows) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free_command_result(create_result);
+    free_command(create_cmd, 0);
+
+    // Add three rows
+    Command* add_cmd1 = parse_command("ADD mydb * (10)");
+    CommandResult* add_result1 = execute_command(add_cmd1);
+    free_command_result(add_result1);
+    free_command(add_cmd1, 1);
+
+    Command* add_cmd2 = parse_command("ADD mydb * (20)");
+    CommandResult* add_result2 = execute_command(add_cmd2);
+    free_command_result(add_result2);
+    free_command(add_cmd2, 1);
+
+    Command* add_cmd3 = parse_command("ADD mydb * (30)");
+    CommandResult* add_result3 = execute_command(add_cmd3);
+    free_command_result(add_result3);
+    free_command(add_cmd3, 1);
+
+    // Delete the middle row
+    Command* del_cmd = parse_command("DEL mydb 2");
+    CommandResult* del_result = execute_command(del_cmd);
+    cr_assert_eq(del_result->code, 2);
+    free_command_result(del_result);
+    free_command(del_cmd, 0);
+
+    // Verify only 2 rows remain
+    DB* db = find_db("mydb");
+    cr_assert_eq(db->rowsCount, 2);
+    cr_assert_eq(db->rows[0].values[0].value.i, 1);
+    cr_assert_eq(db->rows[0].values[1].value.i, 10);
+    cr_assert_eq(db->rows[1].values[0].value.i, 3);
+    cr_assert_eq(db->rows[1].values[1].value.i, 30);
+}
+
+Test(execute_del, delete_first_row) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free_command_result(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd1 = parse_command("ADD mydb * (10)");
+    CommandResult* add_result1 = execute_command(add_cmd1);
+    free_command_result(add_result1);
+    free_command(add_cmd1, 1);
+
+    Command* add_cmd2 = parse_command("ADD mydb * (20)");
+    CommandResult* add_result2 = execute_command(add_cmd2);
+    free_command_result(add_result2);
+    free_command(add_cmd2, 1);
+
+    Command* del_cmd = parse_command("DEL mydb 1");
+    CommandResult* del_result = execute_command(del_cmd);
+    cr_assert_eq(del_result->code, 1);
+    free_command_result(del_result);
+    free_command(del_cmd, 0);
+
+    DB* db = find_db("mydb");
+    cr_assert_eq(db->rowsCount, 1);
+    cr_assert_eq(db->rows[0].values[0].value.i, 2);
+}
+
+Test(execute_del, delete_last_row) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free_command_result(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd1 = parse_command("ADD mydb * (10)");
+    CommandResult* add_result1 = execute_command(add_cmd1);
+    free_command_result(add_result1);
+    free_command(add_cmd1, 1);
+
+    Command* add_cmd2 = parse_command("ADD mydb * (20)");
+    CommandResult* add_result2 = execute_command(add_cmd2);
+    free_command_result(add_result2);
+    free_command(add_cmd2, 1);
+
+    Command* del_cmd = parse_command("DEL mydb 2");
+    CommandResult* del_result = execute_command(del_cmd);
+    cr_assert_eq(del_result->code, 2);
+    free_command_result(del_result);
+    free_command(del_cmd, 0);
+
+    DB* db = find_db("mydb");
+    cr_assert_eq(db->rowsCount, 1);
+    cr_assert_eq(db->rows[0].values[0].value.i, 1);
+}
+
+Test(execute_del, delete_with_string_values) {
+    Command* create_cmd = parse_command("CREATE mydb (string name, int age)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free_command_result(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd = parse_command("ADD mydb * (\"John Doe\", 30)");
+    CommandResult* add_result = execute_command(add_cmd);
+    free_command_result(add_result);
+    free_command(add_cmd, 1);
+
+    Command* del_cmd = parse_command("DEL mydb 1");
+    CommandResult* del_result = execute_command(del_cmd);
+    cr_assert_eq(del_result->code, 1);
+    free_command_result(del_result);
+    free_command(del_cmd, 0);
+
+    DB* db = find_db("mydb");
+    cr_assert_eq(db->rowsCount, 0);
+}
+
+Test(execute_del, delete_row_not_found) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free_command_result(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd = parse_command("ADD mydb * (42)");
+    CommandResult* add_result = execute_command(add_cmd);
+    free_command_result(add_result);
+    free_command(add_cmd, 1);
+
+    // Try to delete non-existent key
+    Command* del_cmd = parse_command("DEL mydb 999");
+    CommandResult* del_result = execute_command(del_cmd);
+    cr_assert_eq(del_result->code, -2);
+    cr_assert_not_null(del_result->message);
+
+    free_command_result(del_result);
+    free_command(del_cmd, 0);
+}
+
+Test(execute_del, delete_database_not_found) {
+    Command* del_cmd = parse_command("DEL nonexistent 1");
+    CommandResult* del_result = execute_command(del_cmd);
+    cr_assert_eq(del_result->code, -1);
+    cr_assert_not_null(del_result->message);
+
+    free_command_result(del_result);
+    free_command(del_cmd, 0);
+}
+
+Test(execute_del, delete_with_explicit_key) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free_command_result(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd = parse_command("ADD mydb 100 (42)");
+    CommandResult* add_result = execute_command(add_cmd);
+    free_command_result(add_result);
+    free_command(add_cmd, 1);
+
+    Command* del_cmd = parse_command("DEL mydb 100");
+    CommandResult* del_result = execute_command(del_cmd);
+    cr_assert_eq(del_result->code, 100);
+
+    DB* db = find_db("mydb");
+    cr_assert_eq(db->rowsCount, 0);
+
+    free_command_result(del_result);
+    free_command(del_cmd, 0);
+}
+
+Test(execute_del, delete_all_rows_one_by_one) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free_command_result(create_result);
+    free_command(create_cmd, 0);
+
+    // Add three rows
+    Command* add_cmd1 = parse_command("ADD mydb * (10)");
+    CommandResult* add_result1 = execute_command(add_cmd1);
+    free_command_result(add_result1);
+    free_command(add_cmd1, 1);
+
+    Command* add_cmd2 = parse_command("ADD mydb * (20)");
+    CommandResult* add_result2 = execute_command(add_cmd2);
+    free_command_result(add_result2);
+    free_command(add_cmd2, 1);
+
+    Command* add_cmd3 = parse_command("ADD mydb * (30)");
+    CommandResult* add_result3 = execute_command(add_cmd3);
+    free_command_result(add_result3);
+    free_command(add_cmd3, 1);
+
+    DB* db = find_db("mydb");
+    cr_assert_eq(db->rowsCount, 3);
+
+    // Delete all rows
+    Command* del_cmd1 = parse_command("DEL mydb 1");
+    CommandResult* del_result1 = execute_command(del_cmd1);
+    cr_assert_eq(del_result1->code, 1);
+    free_command_result(del_result1);
+    free_command(del_cmd1, 0);
+    cr_assert_eq(db->rowsCount, 2);
+
+    Command* del_cmd2 = parse_command("DEL mydb 2");
+    CommandResult* del_result2 = execute_command(del_cmd2);
+    cr_assert_eq(del_result2->code, 2);
+    free_command_result(del_result2);
+    free_command(del_cmd2, 0);
+    cr_assert_eq(db->rowsCount, 1);
+
+    Command* del_cmd3 = parse_command("DEL mydb 3");
+    CommandResult* del_result3 = execute_command(del_cmd3);
+    cr_assert_eq(del_result3->code, 3);
+    free_command_result(del_result3);
+    free_command(del_cmd3, 0);
+    cr_assert_eq(db->rowsCount, 0);
+}
+
+Test(execute_del, delete_and_add_again) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free_command_result(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd1 = parse_command("ADD mydb * (42)");
+    CommandResult* add_result1 = execute_command(add_cmd1);
+    free_command_result(add_result1);
+    free_command(add_cmd1, 1);
+
+    Command* del_cmd = parse_command("DEL mydb 1");
+    CommandResult* del_result = execute_command(del_cmd);
+    free_command_result(del_result);
+    free_command(del_cmd, 0);
+
+    // Add new row after deletion
+    Command* add_cmd2 = parse_command("ADD mydb * (99)");
+    CommandResult* add_result2 = execute_command(add_cmd2);
+    cr_assert_eq(add_result2->code, 2);  // nextKey continues from 2
+    free_command_result(add_result2);
+    free_command(add_cmd2, 1);
+
+    DB* db = find_db("mydb");
+    cr_assert_eq(db->rowsCount, 1);
+    cr_assert_eq(db->rows[0].values[0].value.i, 2);
+    cr_assert_eq(db->rows[0].values[1].value.i, 99);
+}

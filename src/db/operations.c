@@ -349,9 +349,34 @@ static CommandResult* execute_del(DeleteData* data) {
     if(result == NULL) {
         return NULL;
     }
-    // TODO: Implement DEL operation
-    printf("Executing DEL for database: %s\n", data->dbName);
-    result->code    = 0;
+    result->data = NULL;
+
+    if(data == NULL) {
+        result->code    = -1;
+        result->message = EXECUTION_ERROR_MESSAGES[EX_INVALID_DATA];
+        return result;
+    }
+
+    DB* db = find_db(data->dbName);
+    if(db == NULL) {
+        result->code    = -1;
+        result->message = EXECUTION_ERROR_MESSAGES[EX_DB_NOT_FOUND];
+        return result;
+    }
+
+    int delete_result = db_delete_row(db, data->key);
+    if(delete_result != 0) {
+        result->code = delete_result;
+        if(delete_result == -2) {
+            result->message = EXECUTION_ERROR_MESSAGES[EX_ROW_NOT_FOUND];
+        } else {
+            result->message = EXECUTION_ERROR_MESSAGES[EX_UNKNOWN_ERROR];
+        }
+        return result;
+    }
+
+    printf("Deleted row from database '%s' (key: %d)\n", data->dbName, data->key);
+    result->code    = data->key;
     result->message = NULL;
     return result;
 }
