@@ -1315,3 +1315,296 @@ Test(execute_del, delete_and_add_again) {
     cr_assert_eq(db->rows[0].values[0].value.i, 2);
     cr_assert_eq(db->rows[0].values[1].value.i, 99);
 }
+
+// ============================================================================
+// execute_get_all tests
+// ============================================================================
+
+TestSuite(execute_get_all, .init = setup, .fini = teardown);
+
+Test(execute_get_all, get_all_single_row) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    cr_assert_eq(create_result->code, 1);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd = parse_command("ADD mydb * (42)");
+    CommandResult* add_result = execute_command(add_cmd);
+    cr_assert_eq(add_result->code, 1);
+    free(add_result);
+    free_command(add_cmd, 1);
+
+    Command* get_all_cmd = parse_command("GET_ALL mydb");
+    cr_assert_not_null(get_all_cmd);
+    cr_assert_eq(get_all_cmd->op, OP_GET_ALL);
+
+    CommandResult* result = execute_command(get_all_cmd);
+    cr_assert_not_null(result);
+    cr_assert_eq(result->code, 1);  // 1 row
+    cr_assert_null(result->message);
+    cr_assert_not_null(result->data);
+
+    // Check table contains headers and value
+    cr_assert(strstr(result->data, "key") != NULL);
+    cr_assert(strstr(result->data, "value") != NULL);
+    cr_assert(strstr(result->data, "42") != NULL);
+
+    free_command_result(result);
+    free_command(get_all_cmd, 0);
+}
+
+Test(execute_get_all, get_all_multiple_rows) {
+    Command* create_cmd = parse_command("CREATE mydb (int age, string name)");
+    CommandResult* create_result = execute_command(create_cmd);
+    cr_assert_eq(create_result->code, 2);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add1 = parse_command("ADD mydb * (25, \"Alice\")");
+    CommandResult* add_result1 = execute_command(add1);
+    free(add_result1);
+    free_command(add1, 1);
+
+    Command* add2 = parse_command("ADD mydb * (30, \"Bob\")");
+    CommandResult* add_result2 = execute_command(add2);
+    free(add_result2);
+    free_command(add2, 1);
+
+    Command* add3 = parse_command("ADD mydb * (35, \"Charlie\")");
+    CommandResult* add_result3 = execute_command(add3);
+    free(add_result3);
+    free_command(add3, 1);
+
+    Command* get_all_cmd = parse_command("GET_ALL mydb");
+    CommandResult* result = execute_command(get_all_cmd);
+    cr_assert_not_null(result);
+    cr_assert_eq(result->code, 3);  // 3 rows
+    cr_assert_not_null(result->data);
+
+    // Check all rows are present
+    cr_assert(strstr(result->data, "Alice") != NULL);
+    cr_assert(strstr(result->data, "Bob") != NULL);
+    cr_assert(strstr(result->data, "Charlie") != NULL);
+    cr_assert(strstr(result->data, "25") != NULL);
+    cr_assert(strstr(result->data, "30") != NULL);
+    cr_assert(strstr(result->data, "35") != NULL);
+
+    free_command_result(result);
+    free_command(get_all_cmd, 0);
+}
+
+Test(execute_get_all, get_all_empty_database) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    cr_assert_eq(create_result->code, 1);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* get_all_cmd = parse_command("GET_ALL mydb");
+    CommandResult* result = execute_command(get_all_cmd);
+    cr_assert_not_null(result);
+    cr_assert_eq(result->code, 0);  // 0 rows
+    cr_assert_not_null(result->data);
+    cr_assert(strstr(result->data, "No rows") != NULL);
+
+    free_command_result(result);
+    free_command(get_all_cmd, 0);
+}
+
+Test(execute_get_all, get_all_with_specific_fields) {
+    Command* create_cmd = parse_command("CREATE mydb (int age, string name, double salary)");
+    CommandResult* create_result = execute_command(create_cmd);
+    cr_assert_eq(create_result->code, 3);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add1 = parse_command("ADD mydb * (25, \"Alice\", 50000.5)");
+    CommandResult* add_result1 = execute_command(add1);
+    free(add_result1);
+    free_command(add1, 1);
+
+    Command* add2 = parse_command("ADD mydb * (30, \"Bob\", 60000.75)");
+    CommandResult* add_result2 = execute_command(add2);
+    free(add_result2);
+    free_command(add2, 1);
+
+    Command* get_all_cmd = parse_command("GET_ALL mydb (key, name)");
+    CommandResult* result = execute_command(get_all_cmd);
+    cr_assert_not_null(result);
+    cr_assert_eq(result->code, 2);  // 2 rows
+    cr_assert_not_null(result->data);
+
+    // Check selected fields are present
+    cr_assert(strstr(result->data, "key") != NULL);
+    cr_assert(strstr(result->data, "name") != NULL);
+    cr_assert(strstr(result->data, "Alice") != NULL);
+    cr_assert(strstr(result->data, "Bob") != NULL);
+
+    // Age and salary should not be in the output
+    cr_assert(strstr(result->data, "age") == NULL);
+    cr_assert(strstr(result->data, "salary") == NULL);
+
+    free_command_result(result);
+    free_command(get_all_cmd, 0);
+}
+
+Test(execute_get_all, get_all_database_not_found) {
+    Command* get_all_cmd = parse_command("GET_ALL nonexistent");
+    cr_assert_not_null(get_all_cmd);
+
+    CommandResult* result = execute_command(get_all_cmd);
+    cr_assert_not_null(result);
+    cr_assert(result->code < 0);
+    cr_assert_not_null(result->message);
+
+    free_command_result(result);
+    free_command(get_all_cmd, 0);
+}
+
+Test(execute_get_all, get_all_invalid_field) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    cr_assert_eq(create_result->code, 1);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* get_all_cmd = parse_command("GET_ALL mydb (invalidfield)");
+    CommandResult* result = execute_command(get_all_cmd);
+    cr_assert_not_null(result);
+    cr_assert(result->code < 0);
+    cr_assert_not_null(result->message);
+
+    free_command_result(result);
+    free_command(get_all_cmd, 0);
+}
+
+Test(execute_get_all, get_all_mixed_types) {
+    Command* create_cmd = parse_command("CREATE mydb (int id, double price, bool active, string name)");
+    CommandResult* create_result = execute_command(create_cmd);
+    cr_assert_eq(create_result->code, 4);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add1 = parse_command("ADD mydb * (100, 19.99, true, \"Product1\")");
+    CommandResult* add_result1 = execute_command(add1);
+    free(add_result1);
+    free_command(add1, 1);
+
+    Command* add2 = parse_command("ADD mydb * (200, 29.99, false, \"Product2\")");
+    CommandResult* add_result2 = execute_command(add2);
+    free(add_result2);
+    free_command(add2, 1);
+
+    Command* get_all_cmd = parse_command("GET_ALL mydb");
+    CommandResult* result = execute_command(get_all_cmd);
+    cr_assert_not_null(result);
+    cr_assert_eq(result->code, 2);
+    cr_assert_not_null(result->data);
+
+    // Check all types are formatted correctly
+    cr_assert(strstr(result->data, "100") != NULL);
+    cr_assert(strstr(result->data, "200") != NULL);
+    cr_assert(strstr(result->data, "19.99") != NULL);
+    cr_assert(strstr(result->data, "29.99") != NULL);
+    cr_assert(strstr(result->data, "true") != NULL);
+    cr_assert(strstr(result->data, "false") != NULL);
+    cr_assert(strstr(result->data, "Product1") != NULL);
+    cr_assert(strstr(result->data, "Product2") != NULL);
+
+    free_command_result(result);
+    free_command(get_all_cmd, 0);
+}
+
+Test(execute_get_all, get_all_with_empty_strings) {
+    Command* create_cmd = parse_command("CREATE mydb (string name)");
+    CommandResult* create_result = execute_command(create_cmd);
+    cr_assert_eq(create_result->code, 1);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd = parse_command("ADD mydb * (\"\")");
+    CommandResult* add_result = execute_command(add_cmd);
+    free(add_result);
+    free_command(add_cmd, 1);
+
+    Command* get_all_cmd = parse_command("GET_ALL mydb");
+    CommandResult* result = execute_command(get_all_cmd);
+    cr_assert_not_null(result);
+    cr_assert_eq(result->code, 1);
+    cr_assert_not_null(result->data);
+
+    free_command_result(result);
+    free_command(get_all_cmd, 0);
+}
+
+Test(execute_get_all, get_all_after_delete) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add1 = parse_command("ADD mydb * (10)");
+    CommandResult* add_result1 = execute_command(add1);
+    free(add_result1);
+    free_command(add1, 1);
+
+    Command* add2 = parse_command("ADD mydb * (20)");
+    CommandResult* add_result2 = execute_command(add2);
+    free(add_result2);
+    free_command(add2, 1);
+
+    Command* add3 = parse_command("ADD mydb * (30)");
+    CommandResult* add_result3 = execute_command(add3);
+    free(add_result3);
+    free_command(add3, 1);
+
+    // Delete middle row
+    Command* del_cmd = parse_command("DEL mydb 2");
+    CommandResult* del_result = execute_command(del_cmd);
+    cr_assert_eq(del_result->code, 2);
+    free(del_result);
+    free_command(del_cmd, 0);
+
+    Command* get_all_cmd = parse_command("GET_ALL mydb");
+    CommandResult* result = execute_command(get_all_cmd);
+    cr_assert_not_null(result);
+    cr_assert_eq(result->code, 2);  // 2 rows remaining
+    cr_assert(strstr(result->data, "10") != NULL);
+    cr_assert(strstr(result->data, "30") != NULL);
+    cr_assert(strstr(result->data, "20") == NULL);  // Deleted row
+
+    free_command_result(result);
+    free_command(get_all_cmd, 0);
+}
+
+Test(execute_get_all, get_all_only_key_field) {
+    Command* create_cmd = parse_command("CREATE mydb (int age, string name)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add1 = parse_command("ADD mydb * (25, \"Alice\")");
+    CommandResult* add_result1 = execute_command(add1);
+    free(add_result1);
+    free_command(add1, 1);
+
+    Command* add2 = parse_command("ADD mydb * (30, \"Bob\")");
+    CommandResult* add_result2 = execute_command(add2);
+    free(add_result2);
+    free_command(add2, 1);
+
+    Command* get_all_cmd = parse_command("GET_ALL mydb (key)");
+    CommandResult* result = execute_command(get_all_cmd);
+    cr_assert_not_null(result);
+    cr_assert_eq(result->code, 2);
+    cr_assert_not_null(result->data);
+
+    // Only key column should be present
+    cr_assert(strstr(result->data, "key") != NULL);
+    cr_assert(strstr(result->data, "age") == NULL);
+    cr_assert(strstr(result->data, "name") == NULL);
+
+    free_command_result(result);
+    free_command(get_all_cmd, 0);
+}
