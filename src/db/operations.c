@@ -472,9 +472,22 @@ static CommandResult* execute_count(CountData* data) {
     if(result == NULL) {
         return NULL;
     }
-    // TODO: Implement COUNT operation
-    printf("Executing COUNT for database: %s\n", data->dbName);
-    result->code    = 0;
+    result->data = NULL;
+
+    if(data == NULL) {
+        result->code    = -1;
+        result->message = EXECUTION_ERROR_MESSAGES[EX_INVALID_DATA];
+        return result;
+    }
+
+    DB* db = find_db(data->dbName);
+    if(db == NULL) {
+        result->code    = -1;
+        result->message = EXECUTION_ERROR_MESSAGES[EX_DB_NOT_FOUND];
+        return result;
+    }
+
+    result->code    = db->rowsCount;
     result->message = NULL;
     return result;
 }

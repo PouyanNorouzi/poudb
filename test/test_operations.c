@@ -1608,3 +1608,234 @@ Test(execute_get_all, get_all_only_key_field) {
     free_command_result(result);
     free_command(get_all_cmd, 0);
 }
+
+// ============================================================================
+// execute_count tests
+// ============================================================================
+
+TestSuite(execute_count, .init = setup, .fini = teardown);
+
+Test(execute_count, count_empty_database) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    cr_assert_eq(create_result->code, 1);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* count_cmd = parse_command("COUNT mydb");
+    cr_assert_not_null(count_cmd);
+    cr_assert_eq(count_cmd->op, OP_COUNT);
+
+    CommandResult* result = execute_command(count_cmd);
+    cr_assert_not_null(result);
+    cr_assert_eq(result->code, 0);  // 0 rows
+    cr_assert_null(result->message);
+
+    free_command_result(result);
+    free_command(count_cmd, 0);
+}
+
+Test(execute_count, count_single_row) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add_cmd = parse_command("ADD mydb * (42)");
+    CommandResult* add_result = execute_command(add_cmd);
+    free(add_result);
+    free_command(add_cmd, 1);
+
+    Command* count_cmd = parse_command("COUNT mydb");
+    CommandResult* result = execute_command(count_cmd);
+    cr_assert_not_null(result);
+    cr_assert_eq(result->code, 1);  // 1 row
+    cr_assert_null(result->message);
+
+    free_command_result(result);
+    free_command(count_cmd, 0);
+}
+
+Test(execute_count, count_multiple_rows) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    for(int i = 0; i < 10; i++) {
+        Command* add_cmd = parse_command("ADD mydb * (42)");
+        CommandResult* add_result = execute_command(add_cmd);
+        free(add_result);
+        free_command(add_cmd, 1);
+    }
+
+    Command* count_cmd = parse_command("COUNT mydb");
+    CommandResult* result = execute_command(count_cmd);
+    cr_assert_not_null(result);
+    cr_assert_eq(result->code, 10);  // 10 rows
+    cr_assert_null(result->message);
+
+    free_command_result(result);
+    free_command(count_cmd, 0);
+}
+
+Test(execute_count, count_after_delete) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add1 = parse_command("ADD mydb * (10)");
+    CommandResult* add_result1 = execute_command(add1);
+    free(add_result1);
+    free_command(add1, 1);
+
+    Command* add2 = parse_command("ADD mydb * (20)");
+    CommandResult* add_result2 = execute_command(add2);
+    free(add_result2);
+    free_command(add2, 1);
+
+    Command* add3 = parse_command("ADD mydb * (30)");
+    CommandResult* add_result3 = execute_command(add3);
+    free(add_result3);
+    free_command(add3, 1);
+
+    // Count should be 3
+    Command* count1 = parse_command("COUNT mydb");
+    CommandResult* result1 = execute_command(count1);
+    cr_assert_eq(result1->code, 3);
+    free_command_result(result1);
+    free_command(count1, 0);
+
+    // Delete one row
+    Command* del_cmd = parse_command("DEL mydb 2");
+    CommandResult* del_result = execute_command(del_cmd);
+    free(del_result);
+    free_command(del_cmd, 0);
+
+    // Count should be 2
+    Command* count2 = parse_command("COUNT mydb");
+    CommandResult* result2 = execute_command(count2);
+    cr_assert_eq(result2->code, 2);
+    free_command_result(result2);
+    free_command(count2, 0);
+}
+
+Test(execute_count, count_database_not_found) {
+    Command* count_cmd = parse_command("COUNT nonexistent");
+    cr_assert_not_null(count_cmd);
+
+    CommandResult* result = execute_command(count_cmd);
+    cr_assert_not_null(result);
+    cr_assert(result->code < 0);
+    cr_assert_not_null(result->message);
+
+    free_command_result(result);
+    free_command(count_cmd, 0);
+}
+
+Test(execute_count, count_different_databases) {
+    Command* create1 = parse_command("CREATE db1 (int value)");
+    CommandResult* create_result1 = execute_command(create1);
+    free(create_result1);
+    free_command(create1, 0);
+
+    Command* create2 = parse_command("CREATE db2 (int value)");
+    CommandResult* create_result2 = execute_command(create2);
+    free(create_result2);
+    free_command(create2, 0);
+
+    // Add 3 rows to db1
+    for(int i = 0; i < 3; i++) {
+        Command* add_cmd = parse_command("ADD db1 * (42)");
+        CommandResult* add_result = execute_command(add_cmd);
+        free(add_result);
+        free_command(add_cmd, 1);
+    }
+
+    // Add 5 rows to db2
+    for(int i = 0; i < 5; i++) {
+        Command* add_cmd = parse_command("ADD db2 * (99)");
+        CommandResult* add_result = execute_command(add_cmd);
+        free(add_result);
+        free_command(add_cmd, 1);
+    }
+
+    // Count db1
+    Command* count1 = parse_command("COUNT db1");
+    CommandResult* result1 = execute_command(count1);
+    cr_assert_eq(result1->code, 3);
+    free_command_result(result1);
+    free_command(count1, 0);
+
+    // Count db2
+    Command* count2 = parse_command("COUNT db2");
+    CommandResult* result2 = execute_command(count2);
+    cr_assert_eq(result2->code, 5);
+    free_command_result(result2);
+    free_command(count2, 0);
+}
+
+Test(execute_count, count_after_update) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add1 = parse_command("ADD mydb * (10)");
+    CommandResult* add_result1 = execute_command(add1);
+    free(add_result1);
+    free_command(add1, 1);
+
+    Command* add2 = parse_command("ADD mydb * (20)");
+    CommandResult* add_result2 = execute_command(add2);
+    free(add_result2);
+    free_command(add2, 1);
+
+    // Update doesn't change count
+    Command* up_cmd = parse_command("UP mydb 1 (99)");
+    CommandResult* up_result = execute_command(up_cmd);
+    free(up_result);
+    free_command(up_cmd, 1);
+
+    Command* count_cmd = parse_command("COUNT mydb");
+    CommandResult* result = execute_command(count_cmd);
+    cr_assert_eq(result->code, 2);  // Still 2 rows
+    free_command_result(result);
+    free_command(count_cmd, 0);
+}
+
+Test(execute_count, count_all_deleted) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add1 = parse_command("ADD mydb * (10)");
+    CommandResult* add_result1 = execute_command(add1);
+    free(add_result1);
+    free_command(add1, 1);
+
+    Command* add2 = parse_command("ADD mydb * (20)");
+    CommandResult* add_result2 = execute_command(add2);
+    free(add_result2);
+    free_command(add2, 1);
+
+    // Delete all rows
+    Command* del1 = parse_command("DEL mydb 1");
+    CommandResult* del_result1 = execute_command(del1);
+    free(del_result1);
+    free_command(del1, 0);
+
+    Command* del2 = parse_command("DEL mydb 2");
+    CommandResult* del_result2 = execute_command(del2);
+    free(del_result2);
+    free_command(del2, 0);
+
+    // Count should be 0
+    Command* count_cmd = parse_command("COUNT mydb");
+    CommandResult* result = execute_command(count_cmd);
+    cr_assert_eq(result->code, 0);
+    free_command_result(result);
+    free_command(count_cmd, 0);
+}
