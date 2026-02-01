@@ -1839,3 +1839,325 @@ Test(execute_count, count_all_deleted) {
     free_command_result(result);
     free_command(count_cmd, 0);
 }
+
+// ============================================================================
+// execute_search tests
+// ============================================================================
+
+TestSuite(execute_search, .init = setup, .fini = teardown);
+
+Test(execute_search, search_int_field_single_match) {
+    Command* create_cmd = parse_command("CREATE mydb (int age, string name)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add1 = parse_command("ADD mydb * (25, \"Alice\")");
+    CommandResult* add_result1 = execute_command(add1);
+    free(add_result1);
+    free_command(add1, 1);
+
+    Command* add2 = parse_command("ADD mydb * (30, \"Bob\")");
+    CommandResult* add_result2 = execute_command(add2);
+    free(add_result2);
+    free_command(add2, 1);
+
+    Command* add3 = parse_command("ADD mydb * (25, \"Charlie\")");
+    CommandResult* add_result3 = execute_command(add3);
+    free(add_result3);
+    free_command(add3, 1);
+
+    // Search for age = 30
+    Command* search_cmd = parse_command("SEARCH mydb age 30");
+    CommandResult* result = execute_command(search_cmd);
+    cr_assert_not_null(result);
+    cr_assert_eq(result->code, 1);  // 1 match
+    cr_assert_null(result->message);
+    cr_assert_not_null(result->data);
+    cr_assert(strstr(result->data, "Bob") != NULL);
+    cr_assert(strstr(result->data, "30") != NULL);
+    free_command_result(result);
+    free_command(search_cmd, 0);
+}
+
+Test(execute_search, search_int_field_multiple_matches) {
+    Command* create_cmd = parse_command("CREATE mydb (int age, string name)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add1 = parse_command("ADD mydb * (25, \"Alice\")");
+    CommandResult* add_result1 = execute_command(add1);
+    free(add_result1);
+    free_command(add1, 1);
+
+    Command* add2 = parse_command("ADD mydb * (30, \"Bob\")");
+    CommandResult* add_result2 = execute_command(add2);
+    free(add_result2);
+    free_command(add2, 1);
+
+    Command* add3 = parse_command("ADD mydb * (25, \"Charlie\")");
+    CommandResult* add_result3 = execute_command(add3);
+    free(add_result3);
+    free_command(add3, 1);
+
+    // Search for age = 25
+    Command* search_cmd = parse_command("SEARCH mydb age 25");
+    CommandResult* result = execute_command(search_cmd);
+    cr_assert_not_null(result);
+    cr_assert_eq(result->code, 2);  // 2 matches
+    cr_assert_null(result->message);
+    cr_assert_not_null(result->data);
+    cr_assert(strstr(result->data, "Alice") != NULL);
+    cr_assert(strstr(result->data, "Charlie") != NULL);
+    free_command_result(result);
+    free_command(search_cmd, 0);
+}
+
+Test(execute_search, search_string_field) {
+    Command* create_cmd = parse_command("CREATE mydb (string city, int population)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add1 = parse_command("ADD mydb * (\"Paris\", 2000000)");
+    CommandResult* add_result1 = execute_command(add1);
+    free(add_result1);
+    free_command(add1, 1);
+
+    Command* add2 = parse_command("ADD mydb * (\"London\", 9000000)");
+    CommandResult* add_result2 = execute_command(add2);
+    free(add_result2);
+    free_command(add2, 1);
+
+    Command* add3 = parse_command("ADD mydb * (\"Paris\", 500000)");
+    CommandResult* add_result3 = execute_command(add3);
+    free(add_result3);
+    free_command(add3, 1);
+
+    // Search for city = "Paris"
+    Command* search_cmd = parse_command("SEARCH mydb city \"Paris\"");
+    CommandResult* result = execute_command(search_cmd);
+    cr_assert_not_null(result);
+    cr_assert_eq(result->code, 2);  // 2 matches
+    cr_assert_null(result->message);
+    cr_assert_not_null(result->data);
+    cr_assert(strstr(result->data, "2000000") != NULL);
+    cr_assert(strstr(result->data, "500000") != NULL);
+    free_command_result(result);
+    free_command(search_cmd, 0);
+}
+
+Test(execute_search, search_bool_field) {
+    Command* create_cmd = parse_command("CREATE mydb (string name, bool active)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add1 = parse_command("ADD mydb * (\"Alice\", true)");
+    CommandResult* add_result1 = execute_command(add1);
+    free(add_result1);
+    free_command(add1, 1);
+
+    Command* add2 = parse_command("ADD mydb * (\"Bob\", false)");
+    CommandResult* add_result2 = execute_command(add2);
+    free(add_result2);
+    free_command(add2, 1);
+
+    Command* add3 = parse_command("ADD mydb * (\"Charlie\", true)");
+    CommandResult* add_result3 = execute_command(add3);
+    free(add_result3);
+    free_command(add3, 1);
+
+    // Search for active = true
+    Command* search_cmd = parse_command("SEARCH mydb active true");
+    CommandResult* result = execute_command(search_cmd);
+    cr_assert_not_null(result);
+    cr_assert_eq(result->code, 2);  // 2 matches
+    cr_assert_null(result->message);
+    cr_assert_not_null(result->data);
+    cr_assert(strstr(result->data, "Alice") != NULL);
+    cr_assert(strstr(result->data, "Charlie") != NULL);
+    free_command_result(result);
+    free_command(search_cmd, 0);
+}
+
+Test(execute_search, search_double_field) {
+    Command* create_cmd = parse_command("CREATE mydb (string item, double price)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add1 = parse_command("ADD mydb * (\"Apple\", 1.50)");
+    CommandResult* add_result1 = execute_command(add1);
+    free(add_result1);
+    free_command(add1, 1);
+
+    Command* add2 = parse_command("ADD mydb * (\"Banana\", 0.75)");
+    CommandResult* add_result2 = execute_command(add2);
+    free(add_result2);
+    free_command(add2, 1);
+
+    Command* add3 = parse_command("ADD mydb * (\"Orange\", 1.50)");
+    CommandResult* add_result3 = execute_command(add3);
+    free(add_result3);
+    free_command(add3, 1);
+
+    // Search for price = 1.50
+    Command* search_cmd = parse_command("SEARCH mydb price 1.50");
+    CommandResult* result = execute_command(search_cmd);
+    cr_assert_not_null(result);
+    cr_assert_eq(result->code, 2);  // 2 matches
+    cr_assert_null(result->message);
+    cr_assert_not_null(result->data);
+    cr_assert(strstr(result->data, "Apple") != NULL);
+    cr_assert(strstr(result->data, "Orange") != NULL);
+    free_command_result(result);
+    free_command(search_cmd, 0);
+}
+
+Test(execute_search, search_no_matches) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add1 = parse_command("ADD mydb * (10)");
+    CommandResult* add_result1 = execute_command(add1);
+    free(add_result1);
+    free_command(add1, 1);
+
+    Command* add2 = parse_command("ADD mydb * (20)");
+    CommandResult* add_result2 = execute_command(add2);
+    free(add_result2);
+    free_command(add2, 1);
+
+    // Search for value = 999 (no match)
+    Command* search_cmd = parse_command("SEARCH mydb value 999");
+    CommandResult* result = execute_command(search_cmd);
+    cr_assert_not_null(result);
+    cr_assert_eq(result->code, 0);  // 0 matches
+    cr_assert_null(result->message);
+    cr_assert_not_null(result->data);
+    cr_assert(strstr(result->data, "(No rows)") != NULL);
+    free_command_result(result);
+    free_command(search_cmd, 0);
+}
+
+Test(execute_search, search_with_specific_return_fields) {
+    Command* create_cmd = parse_command("CREATE mydb (int age, string name, string city)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add1 = parse_command("ADD mydb * (25, \"Alice\", \"Paris\")");
+    CommandResult* add_result1 = execute_command(add1);
+    free(add_result1);
+    free_command(add1, 1);
+
+    Command* add2 = parse_command("ADD mydb * (30, \"Bob\", \"London\")");
+    CommandResult* add_result2 = execute_command(add2);
+    free(add_result2);
+    free_command(add2, 1);
+
+    // Search for age = 25 and return only name and city
+    Command* search_cmd = parse_command("SEARCH mydb age 25 (name, city)");
+    CommandResult* result = execute_command(search_cmd);
+    cr_assert_not_null(result);
+    cr_assert_eq(result->code, 1);  // 1 match
+    cr_assert_null(result->message);
+    cr_assert_not_null(result->data);
+    cr_assert(strstr(result->data, "Alice") != NULL);
+    cr_assert(strstr(result->data, "Paris") != NULL);
+    // Should not have key or age columns in output
+    cr_assert(strstr(result->data, "| key") == NULL);
+    free_command_result(result);
+    free_command(search_cmd, 0);
+}
+
+Test(execute_search, search_database_not_found) {
+    Command* search_cmd = parse_command("SEARCH nonexistent age 25");
+    CommandResult* result = execute_command(search_cmd);
+    cr_assert_not_null(result);
+    cr_assert_eq(result->code, -1);
+    cr_assert_not_null(result->message);
+    free_command_result(result);
+    free_command(search_cmd, 0);
+}
+
+Test(execute_search, search_invalid_field) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* search_cmd = parse_command("SEARCH mydb nonexistent 10");
+    CommandResult* result = execute_command(search_cmd);
+    cr_assert_not_null(result);
+    cr_assert_eq(result->code, -1);
+    cr_assert_not_null(result->message);
+    free_command_result(result);
+    free_command(search_cmd, 0);
+}
+
+Test(execute_search, search_empty_database) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* search_cmd = parse_command("SEARCH mydb value 10");
+    CommandResult* result = execute_command(search_cmd);
+    cr_assert_not_null(result);
+    cr_assert_eq(result->code, 0);  // 0 matches
+    cr_assert_null(result->message);
+    cr_assert(strstr(result->data, "(No rows)") != NULL);
+    free_command_result(result);
+    free_command(search_cmd, 0);
+}
+
+Test(execute_search, search_by_key_field) {
+    Command* create_cmd = parse_command("CREATE mydb (string name)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add1 = parse_command("ADD mydb * (\"Alice\")");
+    CommandResult* add_result1 = execute_command(add1);
+    free(add_result1);
+    free_command(add1, 1);
+
+    Command* add2 = parse_command("ADD mydb * (\"Bob\")");
+    CommandResult* add_result2 = execute_command(add2);
+    free(add_result2);
+    free_command(add2, 1);
+
+    // Search by key field
+    Command* search_cmd = parse_command("SEARCH mydb key 2");
+    CommandResult* result = execute_command(search_cmd);
+    cr_assert_not_null(result);
+    cr_assert_eq(result->code, 1);  // 1 match
+    cr_assert(strstr(result->data, "Bob") != NULL);
+    free_command_result(result);
+    free_command(search_cmd, 0);
+}
+
+Test(execute_search, search_invalid_return_field) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add1 = parse_command("ADD mydb * (10)");
+    CommandResult* add_result1 = execute_command(add1);
+    free(add_result1);
+    free_command(add1, 1);
+
+    Command* search_cmd = parse_command("SEARCH mydb value 10 (nonexistent)");
+    CommandResult* result = execute_command(search_cmd);
+    cr_assert_not_null(result);
+    cr_assert_eq(result->code, -1);  // Error
+    cr_assert_not_null(result->message);
+    free_command_result(result);
+    free_command(search_cmd, 0);
+}

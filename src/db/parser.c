@@ -198,13 +198,17 @@ void free_command(Command* cmd, int strings_transferred) {
                 free(cmd->data.search.returnFields);
             }
             // Free search value string if present and not transferred
-            if(!strings_transferred && cmd->data.search.value.value.s != NULL) {
+            // Only free if it's actually a string (size >= 0 indicates string
+            // type)
+            if(!strings_transferred && cmd->data.search.value.size >= 0 &&
+               cmd->data.search.value.value.s != NULL) {
                 free((void*)cmd->data.search.value.value.s);
             }
             break;
 
         default:
-            // OP_DEL, OP_COUNT, OP_CREATE_INDEX, OP_ERROR have no dynamic memory
+            // OP_DEL, OP_COUNT, OP_CREATE_INDEX, OP_ERROR have no dynamic
+            // memory
             break;
     }
 
@@ -317,7 +321,8 @@ static Command* parse_create(const char* input) {
         if(strcasecmp(fields[i].name, "key") == 0) {
             free_fields_array(fields, fieldCount);
             free(cmd);
-            return parse_error(ER_INVALID_IDENTIFIER, "'key' is a reserved field name");
+            return parse_error(ER_INVALID_IDENTIFIER,
+                               "'key' is a reserved field name");
         }
     }
 
@@ -850,7 +855,7 @@ static Command* parse_del(const char* input) {
         return parse_error(ER_OTHER, "Failed to allocate memory");
     }
 
-    cmd->op               = OP_DEL;
+    cmd->op              = OP_DEL;
     cmd->data.delete.key = 0;
 
     // Parse db_name and key
@@ -905,7 +910,7 @@ static Command* parse_del(const char* input) {
     // Skip key
     while(*after_key && !isspace((unsigned char)*after_key)) after_key++;
     after_key = skip_whitespace(after_key);
-    
+
     if(*after_key != '\0') {
         free(cmd);
         return parse_error(ER_SYNTAX_ERROR, "unexpected arguments after key");
@@ -984,15 +989,16 @@ static Command* parse_get_all(const char* input) {
         const char* field_ptr = skip_whitespace(inside_paren);
         if(*field_ptr != '\0') {
             // Count fields
-            int field_count = 1;
-            const char* p = field_ptr;
+            int         field_count = 1;
+            const char* p           = field_ptr;
             while(*p) {
                 if(*p == ',') field_count++;
                 p++;
             }
 
             // Allocate field array
-            cmd->data.get_all.fields = (char**)malloc(sizeof(char*) * field_count);
+            cmd->data.get_all.fields =
+                (char**)malloc(sizeof(char*) * field_count);
             if(cmd->data.get_all.fields == NULL) {
                 free(inside_paren);
                 free(cmd);
@@ -1002,7 +1008,7 @@ static Command* parse_get_all(const char* input) {
             // Parse each field name
             p = field_ptr;
             for(int i = 0; i < field_count; i++) {
-                p = skip_whitespace(p);
+                p                 = skip_whitespace(p);
                 const char* start = p;
                 while(*p && *p != ',' && !isspace((unsigned char)*p)) {
                     p++;
@@ -1041,7 +1047,8 @@ static Command* parse_get_all(const char* input) {
                     free(cmd->data.get_all.fields);
                     free(inside_paren);
                     free(cmd);
-                    return parse_error(ER_INVALID_IDENTIFIER, "invalid field name");
+                    return parse_error(ER_INVALID_IDENTIFIER,
+                                       "invalid field name");
                 }
 
                 p = skip_whitespace(p);
@@ -1093,11 +1100,12 @@ static Command* parse_get_all(const char* input) {
 
         if(*after_db != '\0') {
             free(cmd);
-            return parse_error(ER_SYNTAX_ERROR, "unexpected arguments after database name");
+            return parse_error(ER_SYNTAX_ERROR,
+                               "unexpected arguments after database name");
         }
 
         // No fields specified - will return all fields
-        cmd->data.get_all.fields = NULL;
+        cmd->data.get_all.fields     = NULL;
         cmd->data.get_all.fieldCount = 0;
     }
 
@@ -1115,18 +1123,18 @@ static Command* parse_search(const char* input) {
         return parse_error(ER_OTHER, "Failed to allocate memory");
     }
 
-    cmd->op                         = OP_SEARCH;
-    cmd->data.search.returnFields   = NULL;
-    cmd->data.search.fieldCount     = 0;
-    cmd->data.search.value.size     = 0;
-    cmd->data.search.value.value.i  = 0;
+    cmd->op                        = OP_SEARCH;
+    cmd->data.search.returnFields  = NULL;
+    cmd->data.search.fieldCount    = 0;
+    cmd->data.search.value.size    = 0;
+    cmd->data.search.value.value.i = 0;
 
     // Check if there are parentheses (optional return fields)
     const char* paren = strchr(input, '(');
 
-    char* db_name = NULL;
+    char* db_name    = NULL;
     char* field_name = NULL;
-    char* value_str = NULL;
+    char* value_str  = NULL;
 
     if(paren != NULL) {
         // Has return field specification - split at parenthesis
@@ -1149,7 +1157,7 @@ static Command* parse_search(const char* input) {
         // Extract database name (first token)
         const char* start = ptr;
         while(*ptr && !isspace((unsigned char)*ptr)) ptr++;
-        
+
         size_t db_len = ptr - start;
         if(db_len == 0) {
             free(before_paren);
@@ -1180,7 +1188,7 @@ static Command* parse_search(const char* input) {
 
         start = ptr;
         while(*ptr && !isspace((unsigned char)*ptr)) ptr++;
-        
+
         size_t field_len = ptr - start;
         if(field_len == 0) {
             free(db_name);
@@ -1229,15 +1237,16 @@ static Command* parse_search(const char* input) {
         const char* field_ptr = skip_whitespace(inside_paren);
         if(*field_ptr != '\0') {
             // Count fields
-            int field_count = 1;
-            const char* p = field_ptr;
+            int         field_count = 1;
+            const char* p           = field_ptr;
             while(*p) {
                 if(*p == ',') field_count++;
                 p++;
             }
 
             // Allocate field array
-            cmd->data.search.returnFields = (char**)malloc(sizeof(char*) * field_count);
+            cmd->data.search.returnFields =
+                (char**)malloc(sizeof(char*) * field_count);
             if(cmd->data.search.returnFields == NULL) {
                 free(db_name);
                 free(field_name);
@@ -1250,7 +1259,7 @@ static Command* parse_search(const char* input) {
             // Parse each field name
             p = field_ptr;
             for(int i = 0; i < field_count; i++) {
-                p = skip_whitespace(p);
+                p                 = skip_whitespace(p);
                 const char* start = p;
                 while(*p && *p != ',' && !isspace((unsigned char)*p)) {
                     p++;
@@ -1267,7 +1276,8 @@ static Command* parse_search(const char* input) {
                     free(value_str);
                     free(inside_paren);
                     free(cmd);
-                    return parse_error(ER_MISSING_ARGUMENT, "return field name");
+                    return parse_error(ER_MISSING_ARGUMENT,
+                                       "return field name");
                 }
 
                 cmd->data.search.returnFields[i] = (char*)malloc(len + 1);
@@ -1297,7 +1307,8 @@ static Command* parse_search(const char* input) {
                     free(value_str);
                     free(inside_paren);
                     free(cmd);
-                    return parse_error(ER_INVALID_IDENTIFIER, "invalid return field name");
+                    return parse_error(ER_INVALID_IDENTIFIER,
+                                       "invalid return field name");
                 }
 
                 p = skip_whitespace(p);
@@ -1321,7 +1332,7 @@ static Command* parse_search(const char* input) {
         // Extract database name (first token)
         const char* start = ptr;
         while(*ptr && !isspace((unsigned char)*ptr)) ptr++;
-        
+
         size_t db_len = ptr - start;
         if(db_len == 0) {
             free(cmd);
@@ -1346,7 +1357,7 @@ static Command* parse_search(const char* input) {
 
         start = ptr;
         while(*ptr && !isspace((unsigned char)*ptr)) ptr++;
-        
+
         size_t field_len = ptr - start;
         if(field_len == 0) {
             free(db_name);
@@ -1382,7 +1393,7 @@ static Command* parse_search(const char* input) {
 
         // No return fields specified - will return all fields
         cmd->data.search.returnFields = NULL;
-        cmd->data.search.fieldCount = 0;
+        cmd->data.search.fieldCount   = 0;
     }
 
     // Validate database name
@@ -1429,11 +1440,11 @@ static Command* parse_search(const char* input) {
     // Parse the search value
     const char* value_ptr = value_str;
     int result = parse_single_value(&value_ptr, &cmd->data.search.value);
-    
+
     // Check for trailing content after the value
     value_ptr = skip_whitespace(value_ptr);
     if(*value_ptr != '\0') {
-        result = -6; // Invalid value - has trailing content
+        result = -6;  // Invalid value - has trailing content
     }
 
     if(result != 0) {
@@ -1445,13 +1456,17 @@ static Command* parse_search(const char* input) {
         }
         free(value_str);
         free(cmd);
-        
-        if(result == -3) return parse_error(ER_SYNTAX_ERROR, "unterminated string in search value");
-        if(result == -4) return parse_error(ER_SYNTAX_ERROR, "invalid double value");
-        if(result == -5) return parse_error(ER_SYNTAX_ERROR, "invalid integer value");
+
+        if(result == -3)
+            return parse_error(ER_SYNTAX_ERROR,
+                               "unterminated string in search value");
+        if(result == -4)
+            return parse_error(ER_SYNTAX_ERROR, "invalid double value");
+        if(result == -5)
+            return parse_error(ER_SYNTAX_ERROR, "invalid integer value");
         return parse_error(ER_SYNTAX_ERROR, "invalid search value");
     }
-    
+
     free(value_str);
 
     return cmd;
@@ -1503,7 +1518,8 @@ static Command* parse_count(const char* input) {
 
     if(*after_db != '\0') {
         free(cmd);
-        return parse_error(ER_SYNTAX_ERROR, "unexpected arguments after database name");
+        return parse_error(ER_SYNTAX_ERROR,
+                           "unexpected arguments after database name");
     }
 
     return cmd;
@@ -1522,7 +1538,7 @@ static Command* parse_create_index(const char* input) {
     cmd->op = OP_CREATE_INDEX;
 
     // Parse db_name and field_name
-    char* db_name = NULL;
+    char* db_name    = NULL;
     char* field_name = NULL;
 
     int token_result = tokenize_args(input, &db_name, &field_name);
@@ -1565,7 +1581,9 @@ static Command* parse_create_index(const char* input) {
         return err;
     }
 
-    strncpy(cmd->data.create_index.fieldName, field_name, MAX_FIELD_NAME_LENGTH - 1);
+    strncpy(cmd->data.create_index.fieldName,
+            field_name,
+            MAX_FIELD_NAME_LENGTH - 1);
     cmd->data.create_index.fieldName[MAX_FIELD_NAME_LENGTH - 1] = '\0';
     free(field_name);
 
@@ -1580,7 +1598,8 @@ static Command* parse_create_index(const char* input) {
 
     if(*after_field != '\0') {
         free(cmd);
-        return parse_error(ER_SYNTAX_ERROR, "unexpected arguments after field name");
+        return parse_error(ER_SYNTAX_ERROR,
+                           "unexpected arguments after field name");
     }
 
     return cmd;
@@ -1599,7 +1618,8 @@ static Operation determine_operation(const char* input) {
     for(int i = 0; i < COMMAND_LENGTH; i++) {
         size_t len_command = strlen(COMMAND_STRINGS[i]);
 
-        // Check if input starts with this command AND is followed by whitespace or end
+        // Check if input starts with this command AND is followed by whitespace
+        // or end
         if(len_input >= len_command &&
            strncasecmp(input, COMMAND_STRINGS[i], len_command) == 0 &&
            (input[len_command] == '\0' || input[len_command] == ' ' ||
@@ -1780,7 +1800,8 @@ static int tokenize_args(const char* args_str, char** db_name, char** key_str) {
 /**
  * Free a values array and all allocated strings within it
  * Parser uses: size = -2 for int, -1 for double, 0 for bool, >= 0 for string
- * Note: size = 0 can be both bool and empty string, but bools have value.s = NULL
+ * Note: size = 0 can be both bool and empty string, but bools have value.s =
+ * NULL
  */
 static void free_values_array(Data* values, int count) {
     if(values == NULL) return;
@@ -1998,14 +2019,14 @@ static int parse_single_value(const char** ptr, Data* out_value) {
                p[4] == '\0')) {
         // Parse boolean true
         out_value->value.b  = 1;
-        out_value->size     = 0;
+        out_value->size     = -3;  // Use -3 to indicate bool
         p                  += 4;
     } else if(strncasecmp(p, "false", 5) == 0 &&
               (p[5] == ',' || p[5] == ')' || isspace((unsigned char)p[5]) ||
                p[5] == '\0')) {
         // Parse boolean false
         out_value->value.b  = 0;
-        out_value->size     = 0;
+        out_value->size     = -3;  // Use -3 to indicate bool
         p                  += 5;
     } else if(*p == '-' || *p == '+' || isdigit((unsigned char)*p)) {
         // Parse number (int or double)

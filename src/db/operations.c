@@ -41,7 +41,13 @@ static char* format_row_as_table(DB*    db,
                                  char** fields,
                                  int    fieldCount);
 static char* format_rows_as_table(DB* db, char** fields, int fieldCount);
+static char* format_search_results(DB*    db,
+                                   Row**  matchingRows,
+                                   int    matchCount,
+                                   char** fields,
+                                   int    fieldCount);
 static int   find_field_index(DB* db, const char* fieldName);
+static int   compare_values(Data* a, Data* b, FieldType type);
 static void  build_table_header(char** ptr,
                                 DB*    db,
                                 int*   fieldIndices,
@@ -264,7 +270,7 @@ static CommandResult* execute_up(UpdateData* data) {
         switch(expectedType) {
             case TYPE_INT:    valid = (singleValue.size == -2); break;
             case TYPE_DOUBLE: valid = (singleValue.size == -1); break;
-            case TYPE_BOOL:   valid = (singleValue.size == 0); break;
+            case TYPE_BOOL:   valid = (singleValue.size == -3); break;
             case TYPE_STRING: valid = (singleValue.size >= 0); break;
             default:          valid = 0;
         }
@@ -457,10 +463,75 @@ static CommandResult* execute_search(SearchData* data) {
     if(result == NULL) {
         return NULL;
     }
-    // TODO: Implement SEARCH operation
-    printf("Executing SEARCH for database: %s\n", data->dbName);
-    result->code    = 0;
+    result->data = NULL;
+
+    if(data == NULL) {
+        result->code    = -1;
+        result->message = EXECUTION_ERROR_MESSAGES[EX_INVALID_DATA];
+        return result;
+    }
+
+    DB* db = find_db(data->dbName);
+    if(db == NULL) {
+        result->code    = -1;
+        result->message = EXECUTION_ERROR_MESSAGES[EX_DB_NOT_FOUND];
+        return result;
+    }
+
+    // Find the search field index
+    int searchFieldIdx = find_field_index(db, data->fieldName);
+    if(searchFieldIdx < 0) {
+        result->code    = -1;
+        result->message = EXECUTION_ERROR_MESSAGES[EX_INVALID_FIELD];
+        return result;
+    }
+
+    // Validate return field names if specific fields are requested
+    if(data->returnFields != NULL && data->fieldCount > 0) {
+        for(int i = 0; i < data->fieldCount; i++) {
+            if(find_field_index(db, data->returnFields[i]) < 0) {
+                result->code    = -1;
+                result->message = EXECUTION_ERROR_MESSAGES[EX_INVALID_FIELD];
+                return result;
+            }
+        }
+    }
+
+    // Collect matching rows
+    Row** matchingRows = (Row**)malloc(sizeof(Row*) * db->rowsCount);
+    if(matchingRows == NULL && db->rowsCount > 0) {
+        result->code    = -1;
+        result->message = EXECUTION_ERROR_MESSAGES[EX_MEMORY_ALLOCATION_FAILED];
+        return result;
+    }
+
+    int       matchCount      = 0;
+    FieldType searchFieldType = db->fields[searchFieldIdx].type;
+
+    for(int i = 0; i < db->rowsCount; i++) {
+        Data* rowValue = &db->rows[i].values[searchFieldIdx];
+        if(compare_values(rowValue, &data->value, searchFieldType) == 0) {
+            matchingRows[matchCount++] = &db->rows[i];
+        }
+    }
+
+    // Format the matching rows as a table
+    char* table = format_search_results(db,
+                                        matchingRows,
+                                        matchCount,
+                                        data->returnFields,
+                                        data->fieldCount);
+    free(matchingRows);
+
+    if(table == NULL) {
+        result->code    = -1;
+        result->message = EXECUTION_ERROR_MESSAGES[EX_MEMORY_ALLOCATION_FAILED];
+        return result;
+    }
+
+    result->code    = matchCount;
     result->message = NULL;
+    result->data    = table;
     return result;
 }
 
@@ -509,7 +580,7 @@ static CommandResult* execute_create_index(CreateIndexData* data) {
 
 /**
  * Validate that data types match field types
- * Parser uses: size = -2 for int, -1 for double, 0 for bool, >= 0 for string
+ * Parser uses: size = -3 for bool, -2 for int, -1 for double, >= 0 for string
  */
 static int validate_value_types(DB* db, Data* values, int valueCount) {
     if(db == NULL || values == NULL) {
@@ -544,8 +615,8 @@ static int validate_value_types(DB* db, Data* values, int valueCount) {
                 break;
 
             case TYPE_BOOL:
-                // Parser sets size = 0 for booleans
-                if(val->size != 0) {
+                // Parser sets size = -3 for booleans
+                if(val->size != -3) {
                     fprintf(stderr,
                             "Type mismatch at field '%s': expected bool\n",
                             db->fields[fieldIdx].name);
@@ -805,7 +876,12 @@ static char* format_rows_as_table(DB* db, char** fields, int fieldCount) {
 
     // Build data lines for all rows
     for(int r = 0; r < db->rowsCount; r++) {
-        build_data_row(&ptr, db, &db->rows[r], fieldIndices, colWidths, numFields);
+        build_data_row(&ptr,
+                       db,
+                       &db->rows[r],
+                       fieldIndices,
+                       colWidths,
+                       numFields);
     }
     *ptr = '\0';
 
@@ -913,4 +989,157 @@ static void build_data_row(char** ptr,
     }
     **ptr = '\n';
     (*ptr)++;
+}
+
+/**
+ * Compare two values of the same type
+ * Returns 0 if equal, non-zero otherwise
+ */
+static int compare_values(Data* a, Data* b, FieldType type) {
+    switch(type) {
+        case TYPE_INT:    return (a->value.i == b->value.i) ? 0 : 1;
+        case TYPE_DOUBLE: return (a->value.d == b->value.d) ? 0 : 1;
+        case TYPE_BOOL:   return (a->value.b == b->value.b) ? 0 : 1;
+        case TYPE_STRING:
+            if(a->value.s == NULL && b->value.s == NULL) {
+                return 0;
+            }
+            if(a->value.s == NULL || b->value.s == NULL) {
+                return 1;
+            }
+            return strcmp(a->value.s, b->value.s);
+        default: return 1;
+    }
+}
+
+/**
+ * Format search results (matching rows) as a table
+ */
+static char* format_search_results(DB*    db,
+                                   Row**  matchingRows,
+                                   int    matchCount,
+                                   char** fields,
+                                   int    fieldCount) {
+    if(db == NULL) {
+        return NULL;
+    }
+
+    // Handle no matching rows
+    if(matchCount == 0) {
+        const char* emptyMsg = "(No rows)\n";
+        char*       result   = (char*)malloc(strlen(emptyMsg) + 1);
+        if(result) {
+            strcpy(result, emptyMsg);
+        }
+        return result;
+    }
+
+    // Determine which fields to include
+    int* fieldIndices = NULL;
+    int  numFields    = 0;
+
+    if(fields == NULL || fieldCount == 0) {
+        // Include all fields
+        numFields = db->fieldsCount;
+        if(numFields <= 0) {
+            return NULL;
+        }
+        fieldIndices = (int*)malloc(sizeof(int) * numFields);
+        if(fieldIndices == NULL) {
+            return NULL;
+        }
+        for(int i = 0; i < numFields; i++) {
+            fieldIndices[i] = i;
+        }
+    } else {
+        // Include only specified fields
+        numFields = fieldCount;
+        if(numFields <= 0) {
+            return NULL;
+        }
+        fieldIndices = (int*)malloc(sizeof(int) * numFields);
+        if(fieldIndices == NULL) {
+            return NULL;
+        }
+        for(int i = 0; i < numFields; i++) {
+            fieldIndices[i] = find_field_index(db, fields[i]);
+        }
+    }
+
+    // Calculate column widths
+    int* colWidths = (int*)malloc(sizeof(int) * numFields);
+    if(colWidths == NULL) {
+        free(fieldIndices);
+        return NULL;
+    }
+
+    // Buffer for converting values to strings
+    char valueBuf[256];
+
+    for(int i = 0; i < numFields; i++) {
+        int idx = fieldIndices[i];
+        // Start with header width
+        colWidths[i] = strlen(db->fields[idx].name);
+
+        // Check all matching row values to find maximum width
+        for(int r = 0; r < matchCount; r++) {
+            Data* val = &matchingRows[r]->values[idx];
+            int   valLen;
+            switch(db->fields[idx].type) {
+                case TYPE_INT:
+                    snprintf(valueBuf, sizeof(valueBuf), "%d", val->value.i);
+                    valLen = strlen(valueBuf);
+                    break;
+                case TYPE_DOUBLE:
+                    snprintf(valueBuf, sizeof(valueBuf), "%.6g", val->value.d);
+                    valLen = strlen(valueBuf);
+                    break;
+                case TYPE_BOOL:
+                    valLen = val->value.b ? 4 : 5;  // "true" or "false"
+                    break;
+                case TYPE_STRING:
+                    valLen = val->value.s ? strlen(val->value.s) : 4;  // "NULL"
+                    break;
+                default: valLen = 1;
+            }
+            if(valLen > colWidths[i]) {
+                colWidths[i] = valLen;
+            }
+        }
+    }
+
+    // Calculate total line width: | col1 | col2 | ... |
+    int lineWidth = 1;  // Leading |
+    for(int i = 0; i < numFields; i++) {
+        lineWidth += colWidths[i] + 3;  // " value |"
+    }
+
+    // Allocate buffer for the table (header + separator + data rows + null)
+    int   bufSize = (lineWidth + 1) * (2 + matchCount) + 1;
+    char* table   = (char*)malloc(bufSize);
+    if(table == NULL) {
+        free(colWidths);
+        free(fieldIndices);
+        return NULL;
+    }
+
+    char* ptr = table;
+
+    build_table_header(&ptr, db, fieldIndices, colWidths, numFields);
+
+    // Build data lines for matching rows
+    for(int r = 0; r < matchCount; r++) {
+        build_data_row(&ptr,
+                       db,
+                       matchingRows[r],
+                       fieldIndices,
+                       colWidths,
+                       numFields);
+    }
+    *ptr = '\0';
+
+    free(colWidths);
+    free(fieldIndices);
+
+    return table;
 }
