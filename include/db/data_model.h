@@ -114,6 +114,14 @@ DB* find_db(const char* name);
 int remove_db(const char* name);
 
 /**
+ * Iterate over all databases in storage, calling callback for each one.
+ *
+ * @param callback Function to call for each DB
+ * @param ctx      Opaque context pointer passed through to callback
+ */
+void iter_db_storage(void (*callback)(DB* db, void* ctx), void* ctx);
+
+/**
  * Add a row to a database
  *
  * @param db Pointer to the database

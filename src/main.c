@@ -11,6 +11,7 @@
 #include "db/data_model.h"
 #include "db/operations.h"
 #include "db/parser.h"
+#include "db/persistence.h"
 #include "epoll_manager.h"
 #include "net.h"
 #include "utils.h"
@@ -19,6 +20,11 @@
  * Cleanup handler registered with atexit()
  */
 static void cleanup_handler(void) {
+    if(save_db_storage(POUDB_DEFAULT_DATA_FILE) == 0) {
+        puts("Database state saved.");
+    } else {
+        fprintf(stderr, "Warning: failed to save database state.\n");
+    }
     free_db_storage();
 }
 
@@ -34,6 +40,13 @@ int main(void) {
     puts("Starting to make the server");
     init_db_storage();
     atexit(cleanup_handler);
+
+    int loaded = load_db_storage(POUDB_DEFAULT_DATA_FILE);
+    if(loaded < 0) {
+        fprintf(stderr, "Warning: failed to load persisted data.\n");
+    } else if(loaded > 0) {
+        printf("Loaded %d database(s) from disk.\n", loaded);
+    }
 
     res = create_server(DEFAULT_PORT);
     if(res == -1) {

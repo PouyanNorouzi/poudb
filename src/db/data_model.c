@@ -21,6 +21,16 @@ static Row* find_row(DB* db, int key);
 
 void init_db_storage(void) { db_list_head = NULL; }
 
+void iter_db_storage(void (*callback)(DB* db, void* ctx), void* ctx) {
+    DBNode* current = db_list_head;
+    while(current != NULL) {
+        if(current->db != NULL) {
+            callback(current->db, ctx);
+        }
+        current = current->next;
+    }
+}
+
 void free_db_storage(void) {
     DBNode* current = db_list_head;
     DBNode* next;
