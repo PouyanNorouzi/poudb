@@ -46,6 +46,7 @@ static char* format_search_results(DB*    db,
                                    int    matchCount,
                                    char** fields,
                                    int    fieldCount);
+static Row** collect_rows(DB* db, int* rowCount);
 static int   find_field_index(DB* db, const char* fieldName);
 static int   compare_values(Data* a, Data* b, FieldType type);
 static void  build_table_header(char** ptr,
@@ -212,16 +213,20 @@ static CommandResult* execute_add(AddData* data) {
         } else if(add_result == -4) {
             result->message =
                 EXECUTION_ERROR_MESSAGES[EX_MEMORY_ALLOCATION_FAILED];
+        } else if(add_result == -5) {
+            result->message = "Row key already exists";
         } else {
             result->message = EXECUTION_ERROR_MESSAGES[EX_UNKNOWN_ERROR];
         }
         return result;
     }
 
+    int actualKey = data->autoKey ? (db->nextKey - 1) : data->key;
+
     printf("Added row to database '%s' (key: %d)\n",
            data->dbName,
-           db->rows[db->rowsCount - 1].values[0].value.i);
-    result->code    = db->rows[db->rowsCount - 1].values[0].value.i;
+           actualKey);
+    result->code    = actualKey;
     result->message = NULL;
     result->data    = NULL;
     return result;
@@ -508,11 +513,14 @@ static CommandResult* execute_search(SearchData* data) {
     int       matchCount      = 0;
     FieldType searchFieldType = db->fields[searchFieldIdx].type;
 
-    for(int i = 0; i < db->rowsCount; i++) {
-        Data* rowValue = &db->rows[i].values[searchFieldIdx];
+    DBRowIterator it;
+    Row*          row = db_iter_first(db, &it);
+    while(row != NULL) {
+        Data* rowValue = &row->values[searchFieldIdx];
         if(compare_values(rowValue, &data->value, searchFieldType) == 0) {
-            matchingRows[matchCount++] = &db->rows[i];
+            matchingRows[matchCount++] = row;
         }
+        row = db_iter_next(db, &it);
     }
 
     // Format the matching rows as a table
@@ -813,9 +821,17 @@ static char* format_rows_as_table(DB* db, char** fields, int fieldCount) {
         }
     }
 
+    int   rowCount = 0;
+    Row** rows     = collect_rows(db, &rowCount);
+    if(rows == NULL && db->rowsCount > 0) {
+        free(fieldIndices);
+        return NULL;
+    }
+
     // Calculate column widths
     int* colWidths = (int*)malloc(sizeof(int) * numFields);
     if(colWidths == NULL) {
+        free(rows);
         free(fieldIndices);
         return NULL;
     }
@@ -829,8 +845,8 @@ static char* format_rows_as_table(DB* db, char** fields, int fieldCount) {
         colWidths[i] = strlen(db->fields[idx].name);
 
         // Check all row values to find maximum width
-        for(int r = 0; r < db->rowsCount; r++) {
-            Data* val = &db->rows[r].values[idx];
+        for(int r = 0; r < rowCount; r++) {
+            Data* val = &rows[r]->values[idx];
             int   valLen;
             switch(db->fields[idx].type) {
                 case TYPE_INT:
@@ -862,10 +878,11 @@ static char* format_rows_as_table(DB* db, char** fields, int fieldCount) {
     }
 
     // Allocate buffer for the table (header + separator + data rows + null)
-    int   bufSize = (lineWidth + 1) * (2 + db->rowsCount) + 1;
+    int   bufSize = (lineWidth + 1) * (2 + rowCount) + 1;
     char* table   = (char*)malloc(bufSize);
     if(table == NULL) {
         free(colWidths);
+        free(rows);
         free(fieldIndices);
         return NULL;
     }
@@ -875,10 +892,10 @@ static char* format_rows_as_table(DB* db, char** fields, int fieldCount) {
     build_table_header(&ptr, db, fieldIndices, colWidths, numFields);
 
     // Build data lines for all rows
-    for(int r = 0; r < db->rowsCount; r++) {
+    for(int r = 0; r < rowCount; r++) {
         build_data_row(&ptr,
                        db,
-                       &db->rows[r],
+                       rows[r],
                        fieldIndices,
                        colWidths,
                        numFields);
@@ -886,9 +903,36 @@ static char* format_rows_as_table(DB* db, char** fields, int fieldCount) {
     *ptr = '\0';
 
     free(colWidths);
+    free(rows);
     free(fieldIndices);
 
     return table;
+}
+
+static Row** collect_rows(DB* db, int* rowCount) {
+    if(rowCount == NULL) {
+        return NULL;
+    }
+    *rowCount = 0;
+
+    if(db == NULL || db->rowsCount <= 0) {
+        return NULL;
+    }
+
+    Row** rows = (Row**)malloc(sizeof(Row*) * db->rowsCount);
+    if(rows == NULL) {
+        return NULL;
+    }
+
+    DBRowIterator it;
+    Row*          row = db_iter_first(db, &it);
+    while(row != NULL) {
+        rows[*rowCount] = row;
+        (*rowCount)++;
+        row = db_iter_next(db, &it);
+    }
+
+    return rows;
 }
 
 static void build_table_header(char** ptr,

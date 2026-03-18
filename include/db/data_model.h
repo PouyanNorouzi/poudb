@@ -49,16 +49,28 @@ typedef struct {
 } Row;
 
 /**
+ * Opaque hashmap handle for row storage
+ */
+typedef struct RowHashMap RowHashMap;
+
+/**
+ * Iterator state for traversing rows in hashmap storage
+ */
+typedef struct {
+    int   bucketIndex;
+    void* node;
+} DBRowIterator;
+
+/**
  * Database structure representing a collection/table
  */
 typedef struct {
     char   name[MAX_DB_NAME_LENGTH]; /* Name of the database */
     int    fieldsCount;              /* Number of fields/columns */
     Field* fields;    /* Array of field definitions (fields[0] is the key) */
-    Row*   rows;      /* Array of rows/records */
-    int    rowsCount;    /* Number of rows */
-    int    rowsCapacity; /* Allocated capacity for rows */
-    int    nextKey;      /* Next auto-generated key value */
+    RowHashMap* rowMap;   /* Internal hashmap for rows */
+    int         rowsCount; /* Number of rows */
+    int         nextKey;   /* Next auto-generated key value */
 } DB;
 
 /**
@@ -121,7 +133,7 @@ int remove_db(const char* name);
  * @param values Array of Data values for the row (excluding key)
  * @param valueCount Number of values in the row (excluding key)
  * @return 0 on success, -1 if db is NULL, -2 if valueCount mismatch,
- *         -3 if max capacity reached, -4 if malloc/realloc failed
+ *         -3 if max capacity reached, -4 if malloc failed, -5 if key exists
  */
 int db_add_row(DB* db, int key, Data* values, int valueCount);
 
@@ -165,5 +177,23 @@ int db_delete_row(DB* db, int key);
  * @param row Pointer to the row to free
  */
 void db_free_row(DB* db, Row* row);
+
+/**
+ * Iterate rows in a database (unordered)
+ *
+ * @param db Pointer to the database
+ * @param it Pointer to iterator state
+ * @return First row pointer or NULL if no rows
+ */
+Row* db_iter_first(DB* db, DBRowIterator* it);
+
+/**
+ * Advance row iterator
+ *
+ * @param db Pointer to the database
+ * @param it Pointer to iterator state
+ * @return Next row pointer or NULL if end reached
+ */
+Row* db_iter_next(DB* db, DBRowIterator* it);
 
 #endif /* DATA_MODEL_H */

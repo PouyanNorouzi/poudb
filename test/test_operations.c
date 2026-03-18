@@ -19,6 +19,12 @@ static void teardown(void) {
     free_db_storage();
 }
 
+static Row* get_row_by_key(DB* db, int key) {
+    Row* row = db_get_row(db, key);
+    cr_assert_not_null(row);
+    return row;
+}
+
 // ============================================================================
 // execute_create tests
 // ============================================================================
@@ -111,7 +117,7 @@ Test(execute_create, initializes_row_capacity) {
     DB* db = find_db("testdb");
     cr_assert_not_null(db);
     cr_assert_eq(db->rowsCount, 0);
-    cr_assert_eq(db->rowsCapacity, INITIAL_ROW_CAPACITY);
+    cr_assert_not_null(db->rowMap);
     cr_assert_eq(db->nextKey, 1);
 
     free(result);
@@ -168,8 +174,10 @@ Test(execute_add, single_int_value_auto_key) {
     // Verify the row was added
     DB* db = find_db("mydb");
     cr_assert_eq(db->rowsCount, 1);
-    cr_assert_eq(db->rows[0].values[0].value.i, 1);  // key
-    cr_assert_eq(db->rows[0].values[1].value.i, 42); // value
+    Row* row = get_row_by_key(db, 1);
+    cr_assert_eq(row->values[0].value.i, 1);  // key
+    cr_assert_eq(row->values[1].value.i, 42); // value
+    db_free_row(db, row);
 
     free(add_result);
     free_command(add_cmd, 1);  // strings transferred
@@ -189,7 +197,9 @@ Test(execute_add, single_string_value) {
 
     DB* db = find_db("mydb");
     cr_assert_eq(db->rowsCount, 1);
-    cr_assert_str_eq(db->rows[0].values[1].value.s, "hello");
+    Row* row = get_row_by_key(db, 1);
+    cr_assert_str_eq(row->values[1].value.s, "hello");
+    db_free_row(db, row);
 
     free(add_result);
     free_command(add_cmd, 1);
@@ -208,7 +218,9 @@ Test(execute_add, explicit_key) {
     cr_assert_eq(add_result->code, 100);  // Returns the key used
 
     DB* db = find_db("mydb");
-    cr_assert_eq(db->rows[0].values[0].value.i, 100);
+    Row* row = get_row_by_key(db, 100);
+    cr_assert_eq(row->values[0].value.i, 100);
+    db_free_row(db, row);
     cr_assert_eq(db->nextKey, 101);  // nextKey updated
 
     free(add_result);
@@ -231,11 +243,13 @@ Test(execute_add, multiple_values_mixed_types) {
 
     DB* db = find_db("users");
     cr_assert_eq(db->rowsCount, 1);
-    cr_assert_eq(db->rows[0].values[0].value.i, 1);       // key
-    cr_assert_eq(db->rows[0].values[1].value.i, 25);      // age
-    cr_assert_str_eq(db->rows[0].values[2].value.s, "John Doe"); // name
-    cr_assert_float_eq(db->rows[0].values[3].value.d, 50000.50, 0.01); // salary
-    cr_assert_eq(db->rows[0].values[4].value.b, true);    // active
+    Row* row = get_row_by_key(db, 1);
+    cr_assert_eq(row->values[0].value.i, 1);       // key
+    cr_assert_eq(row->values[1].value.i, 25);      // age
+    cr_assert_str_eq(row->values[2].value.s, "John Doe"); // name
+    cr_assert_float_eq(row->values[3].value.d, 50000.50, 0.01); // salary
+    cr_assert_eq(row->values[4].value.b, true);    // active
+    db_free_row(db, row);
 
     free(add_result);
     free_command(add_cmd, 1);
@@ -336,8 +350,10 @@ Test(execute_add, negative_values) {
     cr_assert_eq(add_result->code, 1);
 
     DB* db = find_db("mydb");
-    cr_assert_eq(db->rows[0].values[1].value.i, -42);
-    cr_assert_float_eq(db->rows[0].values[2].value.d, -3.14, 0.01);
+    Row* row = get_row_by_key(db, 1);
+    cr_assert_eq(row->values[1].value.i, -42);
+    cr_assert_float_eq(row->values[2].value.d, -3.14, 0.01);
+    db_free_row(db, row);
 
     free(add_result);
     free_command(add_cmd, 1);
@@ -354,8 +370,10 @@ Test(execute_add, bool_values) {
     cr_assert_eq(add_result->code, 1);
 
     DB* db = find_db("mydb");
-    cr_assert_eq(db->rows[0].values[1].value.b, true);
-    cr_assert_eq(db->rows[0].values[2].value.b, false);
+    Row* row = get_row_by_key(db, 1);
+    cr_assert_eq(row->values[1].value.b, true);
+    cr_assert_eq(row->values[2].value.b, false);
+    db_free_row(db, row);
 
     free(add_result);
     free_command(add_cmd, 1);
@@ -372,7 +390,9 @@ Test(execute_add, empty_string) {
     cr_assert_eq(add_result->code, 1);
 
     DB* db = find_db("mydb");
-    cr_assert_str_eq(db->rows[0].values[1].value.s, "");
+    Row* row = get_row_by_key(db, 1);
+    cr_assert_str_eq(row->values[1].value.s, "");
+    db_free_row(db, row);
 
     free(add_result);
     free_command(add_cmd, 1);
@@ -389,7 +409,9 @@ Test(execute_add, string_with_spaces) {
     cr_assert_eq(add_result->code, 1);
 
     DB* db = find_db("mydb");
-    cr_assert_str_eq(db->rows[0].values[1].value.s, "hello world with spaces");
+    Row* row = get_row_by_key(db, 1);
+    cr_assert_str_eq(row->values[1].value.s, "hello world with spaces");
+    db_free_row(db, row);
 
     free(add_result);
     free_command(add_cmd, 1);
@@ -406,7 +428,9 @@ Test(execute_add, zero_key) {
     cr_assert_eq(add_result->code, 0);
 
     DB* db = find_db("mydb");
-    cr_assert_eq(db->rows[0].values[0].value.i, 0);
+    Row* row = get_row_by_key(db, 0);
+    cr_assert_eq(row->values[0].value.i, 0);
+    db_free_row(db, row);
     cr_assert_eq(db->nextKey, 1);  // nextKey stays at 1 since 0 < 1
 
     free(add_result);
@@ -424,7 +448,9 @@ Test(execute_add, scientific_notation) {
     cr_assert_eq(add_result->code, 1);
 
     DB* db = find_db("mydb");
-    cr_assert_float_eq(db->rows[0].values[1].value.d, 1500.0, 0.01);
+    Row* row = get_row_by_key(db, 1);
+    cr_assert_float_eq(row->values[1].value.d, 1500.0, 0.01);
+    db_free_row(db, row);
 
     free(add_result);
     free_command(add_cmd, 1);
@@ -461,7 +487,9 @@ Test(execute_up, update_single_int_value) {
 
     // Verify the update
     DB* db = find_db("mydb");
-    cr_assert_eq(db->rows[0].values[1].value.i, 100);
+    Row* row = get_row_by_key(db, 1);
+    cr_assert_eq(row->values[1].value.i, 100);
+    db_free_row(db, row);
 
     free(up_result);
     free_command(up_cmd, 1);
@@ -483,7 +511,9 @@ Test(execute_up, update_single_string_value) {
     cr_assert_eq(up_result->code, 1);
 
     DB* db = find_db("mydb");
-    cr_assert_str_eq(db->rows[0].values[1].value.s, "world");
+    Row* row = get_row_by_key(db, 1);
+    cr_assert_str_eq(row->values[1].value.s, "world");
+    db_free_row(db, row);
 
     free(up_result);
     free_command(up_cmd, 1);
@@ -508,10 +538,12 @@ Test(execute_up, update_multiple_values) {
     cr_assert_eq(up_result->code, 1);
 
     DB* db = find_db("users");
-    cr_assert_eq(db->rows[0].values[1].value.i, 30);
-    cr_assert_str_eq(db->rows[0].values[2].value.s, "Jane");
-    cr_assert_float_eq(db->rows[0].values[3].value.d, 60000.0, 0.01);
-    cr_assert_eq(db->rows[0].values[4].value.b, false);
+    Row* row = get_row_by_key(db, 1);
+    cr_assert_eq(row->values[1].value.i, 30);
+    cr_assert_str_eq(row->values[2].value.s, "Jane");
+    cr_assert_float_eq(row->values[3].value.d, 60000.0, 0.01);
+    cr_assert_eq(row->values[4].value.b, false);
+    db_free_row(db, row);
 
     free(up_result);
     free_command(up_cmd, 1);
@@ -534,9 +566,11 @@ Test(execute_up, update_with_ignore_flags) {
     cr_assert_eq(up_result->code, 1);
 
     DB* db = find_db("mydb");
-    cr_assert_eq(db->rows[0].values[1].value.i, 20);  // Updated
-    cr_assert_str_eq(db->rows[0].values[2].value.s, "original");  // Unchanged
-    cr_assert_eq(db->rows[0].values[3].value.i, 40);  // Updated
+    Row* row = get_row_by_key(db, 1);
+    cr_assert_eq(row->values[1].value.i, 20);  // Updated
+    cr_assert_str_eq(row->values[2].value.s, "original");  // Unchanged
+    cr_assert_eq(row->values[3].value.i, 40);  // Updated
+    db_free_row(db, row);
 
     free(up_result);
     free_command(up_cmd, 1);
@@ -559,8 +593,10 @@ Test(execute_up, update_ignore_all_fields) {
     cr_assert_eq(up_result->code, 1);
 
     DB* db = find_db("mydb");
-    cr_assert_eq(db->rows[0].values[1].value.i, 10);
-    cr_assert_eq(db->rows[0].values[2].value.i, 20);
+    Row* row = get_row_by_key(db, 1);
+    cr_assert_eq(row->values[1].value.i, 10);
+    cr_assert_eq(row->values[2].value.i, 20);
+    db_free_row(db, row);
 
     free(up_result);
     free_command(up_cmd, 1);
@@ -634,8 +670,10 @@ Test(execute_up, update_negative_values) {
     cr_assert_eq(up_result->code, 1);
 
     DB* db = find_db("mydb");
-    cr_assert_eq(db->rows[0].values[1].value.i, -42);
-    cr_assert_float_eq(db->rows[0].values[2].value.d, -3.14, 0.01);
+    Row* row = get_row_by_key(db, 1);
+    cr_assert_eq(row->values[1].value.i, -42);
+    cr_assert_float_eq(row->values[2].value.d, -3.14, 0.01);
+    db_free_row(db, row);
 
     free(up_result);
     free_command(up_cmd, 1);
@@ -657,8 +695,10 @@ Test(execute_up, update_bool_values) {
     cr_assert_eq(up_result->code, 1);
 
     DB* db = find_db("mydb");
-    cr_assert_eq(db->rows[0].values[1].value.b, false);
-    cr_assert_eq(db->rows[0].values[2].value.b, true);
+    Row* row = get_row_by_key(db, 1);
+    cr_assert_eq(row->values[1].value.b, false);
+    cr_assert_eq(row->values[2].value.b, true);
+    db_free_row(db, row);
 
     free(up_result);
     free_command(up_cmd, 1);
@@ -680,7 +720,9 @@ Test(execute_up, update_empty_string) {
     cr_assert_eq(up_result->code, 1);
 
     DB* db = find_db("mydb");
-    cr_assert_str_eq(db->rows[0].values[1].value.s, "");
+    Row* row = get_row_by_key(db, 1);
+    cr_assert_str_eq(row->values[1].value.s, "");
+    db_free_row(db, row);
 
     free(up_result);
     free_command(up_cmd, 1);
@@ -702,7 +744,9 @@ Test(execute_up, update_with_explicit_key) {
     cr_assert_eq(up_result->code, 100);
 
     DB* db = find_db("mydb");
-    cr_assert_eq(db->rows[0].values[1].value.i, 999);
+    Row* row = get_row_by_key(db, 100);
+    cr_assert_eq(row->values[1].value.i, 999);
+    db_free_row(db, row);
 
     free(up_result);
     free_command(up_cmd, 1);
@@ -739,9 +783,15 @@ Test(execute_up, update_multiple_rows_correct_key) {
 
     // Verify only second row changed
     DB* db = find_db("mydb");
-    cr_assert_eq(db->rows[0].values[1].value.i, 10);   // Unchanged
-    cr_assert_eq(db->rows[1].values[1].value.i, 200); // Updated
-    cr_assert_eq(db->rows[2].values[1].value.i, 30);  // Unchanged
+    Row* row1 = get_row_by_key(db, 1);
+    Row* row2 = get_row_by_key(db, 2);
+    Row* row3 = get_row_by_key(db, 3);
+    cr_assert_eq(row1->values[1].value.i, 10);   // Unchanged
+    cr_assert_eq(row2->values[1].value.i, 200); // Updated
+    cr_assert_eq(row3->values[1].value.i, 30);  // Unchanged
+    db_free_row(db, row1);
+    db_free_row(db, row2);
+    db_free_row(db, row3);
 }
 
 // ============================================================================
@@ -1105,10 +1155,14 @@ Test(execute_del, delete_from_multiple_rows) {
     // Verify only 2 rows remain
     DB* db = find_db("mydb");
     cr_assert_eq(db->rowsCount, 2);
-    cr_assert_eq(db->rows[0].values[0].value.i, 1);
-    cr_assert_eq(db->rows[0].values[1].value.i, 10);
-    cr_assert_eq(db->rows[1].values[0].value.i, 3);
-    cr_assert_eq(db->rows[1].values[1].value.i, 30);
+    Row* row1 = get_row_by_key(db, 1);
+    Row* row3 = get_row_by_key(db, 3);
+    cr_assert_eq(row1->values[0].value.i, 1);
+    cr_assert_eq(row1->values[1].value.i, 10);
+    cr_assert_eq(row3->values[0].value.i, 3);
+    cr_assert_eq(row3->values[1].value.i, 30);
+    db_free_row(db, row1);
+    db_free_row(db, row3);
 }
 
 Test(execute_del, delete_first_row) {
@@ -1135,7 +1189,8 @@ Test(execute_del, delete_first_row) {
 
     DB* db = find_db("mydb");
     cr_assert_eq(db->rowsCount, 1);
-    cr_assert_eq(db->rows[0].values[0].value.i, 2);
+    Row* row = get_row_by_key(db, 2);
+    db_free_row(db, row);
 }
 
 Test(execute_del, delete_last_row) {
@@ -1162,7 +1217,8 @@ Test(execute_del, delete_last_row) {
 
     DB* db = find_db("mydb");
     cr_assert_eq(db->rowsCount, 1);
-    cr_assert_eq(db->rows[0].values[0].value.i, 1);
+    Row* row = get_row_by_key(db, 1);
+    db_free_row(db, row);
 }
 
 Test(execute_del, delete_with_string_values) {
@@ -1312,8 +1368,10 @@ Test(execute_del, delete_and_add_again) {
 
     DB* db = find_db("mydb");
     cr_assert_eq(db->rowsCount, 1);
-    cr_assert_eq(db->rows[0].values[0].value.i, 2);
-    cr_assert_eq(db->rows[0].values[1].value.i, 99);
+    Row* row = get_row_by_key(db, 2);
+    cr_assert_eq(row->values[0].value.i, 2);
+    cr_assert_eq(row->values[1].value.i, 99);
+    db_free_row(db, row);
 }
 
 // ============================================================================

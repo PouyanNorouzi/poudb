@@ -12,7 +12,7 @@ TEST_DIR = test
 TEST_LDFLAGS = -lcriterion
 
 # Source and Object Files
-SRCS := $(wildcard $(SRC_DIR)/*.c) $(wildcard $(SRC_DIR)/db/*.c)
+SRCS := $(wildcard $(SRC_DIR)/*.c) $(wildcard $(SRC_DIR)/db/*.c) $(wildcard $(SRC_DIR)/utils/*.c)
 OBJS := $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/%.o, $(SRCS))
 DEPS := $(OBJS:.o=.d)
 
@@ -32,7 +32,7 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c | $(OBJ_DIR)
 
 # Create build output directories
 $(BIN_DIR) $(OBJ_DIR):
-	mkdir -p $@ $(OBJ_DIR)/db
+	mkdir -p $@ $(OBJ_DIR)/db $(OBJ_DIR)/utils
 
 # Test client targets
 test_client: $(BIN_DIR)/client

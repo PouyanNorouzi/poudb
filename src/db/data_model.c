@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "utils/hashmap.h"
+
 /**
  * Node structure for the database linked list
  */
@@ -18,6 +20,8 @@ typedef struct DBNode {
 static DBNode* db_list_head = NULL;
 
 static Row* find_row(DB* db, int key);
+static void free_row_values(DB* db, Row* row);
+static void free_row_cb(Row* row, void* ctx);
 
 void init_db_storage(void) { db_list_head = NULL; }
 
@@ -146,18 +150,17 @@ DB* db_create(const char* name, Field* fields, int fieldsCount) {
     memcpy(&db->fields[1], fields, sizeof(Field) * fieldsCount);
     db->fieldsCount = totalFields;
 
-    // Pre-allocate rows array
-    db->rows = (Row*)malloc(sizeof(Row) * INITIAL_ROW_CAPACITY);
-    if(db->rows == NULL) {
+    // Initialize row hashmap buckets
+    db->rowMap = row_hashmap_create(INITIAL_ROW_CAPACITY);
+    if(db->rowMap == NULL) {
         perror("malloc");
         free(db->fields);
         free(db);
         return NULL;
     }
 
-    db->rowsCount    = 0;
-    db->rowsCapacity = INITIAL_ROW_CAPACITY;
-    db->nextKey      = 1;
+    db->rowsCount = 0;
+    db->nextKey   = 1;
 
     return db;
 }
@@ -167,21 +170,9 @@ void db_free(DB* db) {
         return;
     }
 
-    // Free all rows
-    if(db->rows != NULL) {
-        for(int i = 0; i < db->rowsCount; i++) {
-            if(db->rows[i].values != NULL) {
-                // Free string values
-                for(int j = 0; j < db->rows[i].valueCount; j++) {
-                    if(db->fields[j].type == TYPE_STRING &&
-                       db->rows[i].values[j].value.s != NULL) {
-                        free((void*)db->rows[i].values[j].value.s);
-                    }
-                }
-                free(db->rows[i].values);
-            }
-        }
-        free(db->rows);
+    // Free all rows and hashmap internals
+    if(db->rowMap != NULL) {
+        row_hashmap_destroy(db->rowMap, free_row_cb, db);
     }
 
     // Free fields
@@ -215,23 +206,6 @@ int db_add_row(DB* db, int key, Data* values, int valueCount) {
         return -3;
     }
 
-    // Check if we need to grow the array
-    if(db->rowsCount >= db->rowsCapacity) {
-        int newCapacity = db->rowsCapacity * 2;
-        if(newCapacity > MAX_ROW_CAPACITY) {
-            newCapacity = MAX_ROW_CAPACITY;
-        }
-
-        Row* newRows = (Row*)realloc(db->rows, sizeof(Row) * newCapacity);
-        if(newRows == NULL) {
-            perror("realloc");
-            return -4;
-        }
-
-        db->rows         = newRows;
-        db->rowsCapacity = newCapacity;
-    }
-
     // Determine the actual key to use
     int actualKey;
     if(key < 0) {
@@ -244,6 +218,12 @@ int db_add_row(DB* db, int key, Data* values, int valueCount) {
         if(actualKey >= db->nextKey) {
             db->nextKey = actualKey + 1;
         }
+    }
+
+    // Enforce unique keys in hashmap storage
+    if(find_row(db, actualKey) != NULL) {
+        fprintf(stderr, "Key '%d' already exists\n", actualKey);
+        return -5;
     }
 
     // Allocate memory for the row's values (key + user values)
@@ -265,9 +245,15 @@ int db_add_row(DB* db, int key, Data* values, int valueCount) {
         rowValues[fieldIdx].value = values[i].value;
     }
 
-    // Add the row
-    db->rows[db->rowsCount].values     = rowValues;
-    db->rows[db->rowsCount].valueCount = totalValues;
+    Row newRow;
+    newRow.values     = rowValues;
+    newRow.valueCount = totalValues;
+
+    if(row_hashmap_insert(db->rowMap, actualKey, newRow, db->rowsCount + 1) !=
+       0) {
+        free(rowValues);
+        return -4;
+    }
     db->rowsCount++;
 
     return 0;
@@ -406,31 +392,12 @@ int db_delete_row(DB* db, int key) {
         return -1;
     }
 
-    // Find the row with the matching key
-    Row* rowToDelete = find_row(db, key);
-    if(rowToDelete == NULL) {
+    Row removedRow;
+    if(row_hashmap_remove(db->rowMap, key, &removedRow) != 0) {
         return -2;  // Row not found
     }
 
-    // Calculate the index for shifting
-    int rowIndex = rowToDelete - db->rows;
-
-    // Free the row's values (including strings)
-    if(rowToDelete->values != NULL) {
-        for(int j = 0; j < rowToDelete->valueCount; j++) {
-            if(db->fields[j].type == TYPE_STRING &&
-               rowToDelete->values[j].value.s != NULL) {
-                free((void*)rowToDelete->values[j].value.s);
-            }
-        }
-        free(rowToDelete->values);
-    }
-
-    // Shift all subsequent rows down by one
-    for(int i = rowIndex; i < db->rowsCount - 1; i++) {
-        db->rows[i] = db->rows[i + 1];
-    }
-
+    free_row_values(db, &removedRow);
     db->rowsCount--;
 
     return 0;
@@ -461,12 +428,38 @@ static Row* find_row(DB* db, int key) {
     if(db == NULL) {
         return NULL;
     }
+    return row_hashmap_find(db->rowMap, key);
+}
 
-    for(int i = 0; i < db->rowsCount; i++) {
-        if(db->rows[i].values != NULL && db->rows[i].values[0].value.i == key) {
-            return &db->rows[i];
-        }
+Row* db_iter_first(DB* db, DBRowIterator* it) {
+    if(db == NULL) {
+        return NULL;
+    }
+    return row_hashmap_iter_first(db->rowMap, it);
+}
+
+Row* db_iter_next(DB* db, DBRowIterator* it) {
+    if(db == NULL) {
+        return NULL;
+    }
+    return row_hashmap_iter_next(db->rowMap, it);
+}
+
+static void free_row_values(DB* db, Row* row) {
+    if(db == NULL || row == NULL || row->values == NULL) {
+        return;
     }
 
-    return NULL;
+    for(int i = 0; i < row->valueCount; i++) {
+        if(db->fields[i].type == TYPE_STRING && row->values[i].value.s != NULL) {
+            free((void*)row->values[i].value.s);
+        }
+    }
+    free(row->values);
+    row->values     = NULL;
+    row->valueCount = 0;
+}
+
+static void free_row_cb(Row* row, void* ctx) {
+    free_row_values((DB*)ctx, row);
 }
