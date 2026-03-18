@@ -52,6 +52,7 @@ typedef struct {
  * Opaque hashmap handle for row storage
  */
 typedef struct RowHashMap RowHashMap;
+typedef struct DBFieldIndex DBFieldIndex;
 
 /**
  * Iterator state for traversing rows in hashmap storage
@@ -69,6 +70,7 @@ typedef struct {
     int    fieldsCount;              /* Number of fields/columns */
     Field* fields;    /* Array of field definitions (fields[0] is the key) */
     RowHashMap* rowMap;   /* Internal hashmap for rows */
+    DBFieldIndex* indexes; /* Per-field index metadata */
     int         rowsCount; /* Number of rows */
     int         nextKey;   /* Next auto-generated key value */
 } DB;
@@ -195,5 +197,39 @@ Row* db_iter_first(DB* db, DBRowIterator* it);
  * @return Next row pointer or NULL if end reached
  */
 Row* db_iter_next(DB* db, DBRowIterator* it);
+
+/**
+ * Check whether an index exists on a field
+ *
+ * @param db Pointer to the database
+ * @param fieldIdx Field index in db->fields
+ * @return 1 if index exists, 0 if not, -1 on invalid input
+ */
+int db_has_index(DB* db, int fieldIdx);
+
+/**
+ * Create an index on a field and build it from existing rows
+ *
+ * @param db Pointer to the database
+ * @param fieldIdx Field index in db->fields
+ * @return 0 on success, -1 on invalid input, -2 if already indexed, -3 on malloc failure
+ */
+int db_create_index(DB* db, int fieldIdx);
+
+/**
+ * Collect matching rows for a field equality lookup using an index
+ *
+ * @param db Pointer to the database
+ * @param fieldIdx Field index in db->fields
+ * @param value Value to search for
+ * @param rowsOut Output array of internal Row pointers (caller must free the array only)
+ * @param rowCountOut Number of rows in rowsOut
+ * @return 0 on success, -1 on invalid input, -2 if no index exists, -3 on malloc failure
+ */
+int db_index_collect_rows(DB*    db,
+                          int    fieldIdx,
+                          Data*  value,
+                          Row*** rowsOut,
+                          int*   rowCountOut);
 
 #endif /* DATA_MODEL_H */

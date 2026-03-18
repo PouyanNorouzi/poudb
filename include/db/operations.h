@@ -16,6 +16,7 @@ typedef enum {
     EX_ROW_NOT_FOUND,           /* Row not found */
     EX_INVALID_FIELD,           /* Invalid field specified */
     EX_TYPE_MISMATCH,           /* Data type mismatch */
+    EX_INDEX_ALREADY_EXISTS,    /* Index already exists */
     EX_UNKNOWN_ERROR            /* Unknown error */
 } ExecutionError;
 

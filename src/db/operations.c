@@ -20,6 +20,7 @@ static const char* EXECUTION_ERROR_MESSAGES[] = {
     "Row not found",                      /* EX_ROW_NOT_FOUND */
     "Invalid field specified",            /* EX_INVALID_FIELD */
     "Data type mismatch",                 /* EX_TYPE_MISMATCH */
+    "Index already exists",               /* EX_INDEX_ALREADY_EXISTS */
     "Unknown error occurred"              /* EX_UNKNOWN_ERROR */
 };
 
@@ -502,25 +503,47 @@ static CommandResult* execute_search(SearchData* data) {
         }
     }
 
-    // Collect matching rows
-    Row** matchingRows = (Row**)malloc(sizeof(Row*) * db->rowsCount);
-    if(matchingRows == NULL && db->rowsCount > 0) {
-        result->code    = -1;
-        result->message = EXECUTION_ERROR_MESSAGES[EX_MEMORY_ALLOCATION_FAILED];
-        return result;
-    }
-
     int       matchCount      = 0;
     FieldType searchFieldType = db->fields[searchFieldIdx].type;
 
-    DBRowIterator it;
-    Row*          row = db_iter_first(db, &it);
-    while(row != NULL) {
-        Data* rowValue = &row->values[searchFieldIdx];
-        if(compare_values(rowValue, &data->value, searchFieldType) == 0) {
-            matchingRows[matchCount++] = row;
+    Row** matchingRows = NULL;
+    int   hasIndex     = db_has_index(db, searchFieldIdx);
+
+    if(hasIndex == 1) {
+        int indexResult = db_index_collect_rows(db,
+                                                searchFieldIdx,
+                                                &data->value,
+                                                &matchingRows,
+                                                &matchCount);
+        if(indexResult == -3) {
+            result->code    = -1;
+            result->message =
+                EXECUTION_ERROR_MESSAGES[EX_MEMORY_ALLOCATION_FAILED];
+            return result;
         }
-        row = db_iter_next(db, &it);
+        if(indexResult != 0) {
+            hasIndex = 0;
+        }
+    }
+
+    if(hasIndex != 1) {
+        matchingRows = (Row**)malloc(sizeof(Row*) * db->rowsCount);
+        if(matchingRows == NULL && db->rowsCount > 0) {
+            result->code    = -1;
+            result->message =
+                EXECUTION_ERROR_MESSAGES[EX_MEMORY_ALLOCATION_FAILED];
+            return result;
+        }
+
+        DBRowIterator it;
+        Row*          row = db_iter_first(db, &it);
+        while(row != NULL) {
+            Data* rowValue = &row->values[searchFieldIdx];
+            if(compare_values(rowValue, &data->value, searchFieldType) == 0) {
+                matchingRows[matchCount++] = row;
+            }
+            row = db_iter_next(db, &it);
+        }
     }
 
     // Format the matching rows as a table
@@ -579,9 +602,44 @@ static CommandResult* execute_create_index(CreateIndexData* data) {
     if(result == NULL) {
         return NULL;
     }
-    // TODO: Implement CREATE_INDEX operation
-    printf("Executing CREATE_INDEX for database: %s\n", data->dbName);
-    result->code    = 0;
+    result->data = NULL;
+
+    if(data == NULL) {
+        result->code    = -1;
+        result->message = EXECUTION_ERROR_MESSAGES[EX_INVALID_DATA];
+        return result;
+    }
+
+    DB* db = find_db(data->dbName);
+    if(db == NULL) {
+        result->code    = -1;
+        result->message = EXECUTION_ERROR_MESSAGES[EX_DB_NOT_FOUND];
+        return result;
+    }
+
+    int fieldIdx = find_field_index(db, data->fieldName);
+    if(fieldIdx < 0) {
+        result->code    = -1;
+        result->message = EXECUTION_ERROR_MESSAGES[EX_INVALID_FIELD];
+        return result;
+    }
+
+    int createResult = db_create_index(db, fieldIdx);
+    if(createResult != 0) {
+        result->code = createResult;
+        if(createResult == -2) {
+            result->message =
+                EXECUTION_ERROR_MESSAGES[EX_INDEX_ALREADY_EXISTS];
+        } else if(createResult == -3) {
+            result->message =
+                EXECUTION_ERROR_MESSAGES[EX_MEMORY_ALLOCATION_FAILED];
+        } else {
+            result->message = EXECUTION_ERROR_MESSAGES[EX_UNKNOWN_ERROR];
+        }
+        return result;
+    }
+
+    result->code    = fieldIdx;
     result->message = NULL;
     return result;
 }

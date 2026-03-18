@@ -2219,3 +2219,140 @@ Test(execute_search, search_invalid_return_field) {
     free_command_result(result);
     free_command(search_cmd, 0);
 }
+
+// ============================================================================
+// execute_create_index tests
+// ============================================================================
+
+TestSuite(execute_create_index, .init = setup, .fini = teardown);
+
+Test(execute_create_index, create_index_success) {
+    Command* create_cmd = parse_command("CREATE mydb (int age, string name)");
+    CommandResult* create_result = execute_command(create_cmd);
+    cr_assert_eq(create_result->code, 2);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* idx_cmd = parse_command("CREATE_INDEX mydb age");
+    cr_assert_not_null(idx_cmd);
+    cr_assert_eq(idx_cmd->op, OP_CREATE_INDEX);
+
+    CommandResult* idx_result = execute_command(idx_cmd);
+    cr_assert_not_null(idx_result);
+    cr_assert_eq(idx_result->code, 1);
+    cr_assert_null(idx_result->message);
+
+    DB* db = find_db("mydb");
+    cr_assert_not_null(db);
+    cr_assert_eq(db_has_index(db, 1), 1);
+
+    free_command_result(idx_result);
+    free_command(idx_cmd, 0);
+}
+
+Test(execute_create_index, create_index_duplicate_fails) {
+    Command* create_cmd = parse_command("CREATE mydb (int age, string name)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* idx_cmd1 = parse_command("CREATE_INDEX mydb age");
+    CommandResult* idx_result1 = execute_command(idx_cmd1);
+    cr_assert_eq(idx_result1->code, 1);
+    free_command_result(idx_result1);
+    free_command(idx_cmd1, 0);
+
+    Command* idx_cmd2 = parse_command("CREATE_INDEX mydb age");
+    CommandResult* idx_result2 = execute_command(idx_cmd2);
+    cr_assert_not_null(idx_result2);
+    cr_assert_eq(idx_result2->code, -2);
+    cr_assert_not_null(idx_result2->message);
+
+    free_command_result(idx_result2);
+    free_command(idx_cmd2, 0);
+}
+
+Test(execute_create_index, create_index_database_not_found) {
+    Command* idx_cmd = parse_command("CREATE_INDEX nonexistent age");
+    CommandResult* idx_result = execute_command(idx_cmd);
+    cr_assert_not_null(idx_result);
+    cr_assert_eq(idx_result->code, -1);
+    cr_assert_not_null(idx_result->message);
+
+    free_command_result(idx_result);
+    free_command(idx_cmd, 0);
+}
+
+Test(execute_create_index, create_index_invalid_field) {
+    Command* create_cmd = parse_command("CREATE mydb (int value)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* idx_cmd = parse_command("CREATE_INDEX mydb nonexistent");
+    CommandResult* idx_result = execute_command(idx_cmd);
+    cr_assert_not_null(idx_result);
+    cr_assert_eq(idx_result->code, -1);
+    cr_assert_not_null(idx_result->message);
+
+    free_command_result(idx_result);
+    free_command(idx_cmd, 0);
+}
+
+Test(execute_create_index, indexed_search_consistent_after_add_update_delete) {
+    Command* create_cmd = parse_command("CREATE mydb (int age, string name)");
+    CommandResult* create_result = execute_command(create_cmd);
+    free(create_result);
+    free_command(create_cmd, 0);
+
+    Command* add1 = parse_command("ADD mydb * (25, \"Alice\")");
+    CommandResult* add_result1 = execute_command(add1);
+    free(add_result1);
+    free_command(add1, 1);
+
+    Command* add2 = parse_command("ADD mydb * (30, \"Bob\")");
+    CommandResult* add_result2 = execute_command(add2);
+    free(add_result2);
+    free_command(add2, 1);
+
+    Command* idx_cmd = parse_command("CREATE_INDEX mydb age");
+    CommandResult* idx_result = execute_command(idx_cmd);
+    cr_assert_eq(idx_result->code, 1);
+    free_command_result(idx_result);
+    free_command(idx_cmd, 0);
+
+    Command* search1 = parse_command("SEARCH mydb age 25");
+    CommandResult* search_result1 = execute_command(search1);
+    cr_assert_eq(search_result1->code, 1);
+    cr_assert(strstr(search_result1->data, "Alice") != NULL);
+    free_command_result(search_result1);
+    free_command(search1, 0);
+
+    Command* up_cmd = parse_command("UP mydb 2 (25, _)");
+    CommandResult* up_result = execute_command(up_cmd);
+    cr_assert_eq(up_result->code, 2);
+    free_command_result(up_result);
+    free_command(up_cmd, 1);
+
+    Command* search2 = parse_command("SEARCH mydb age 25");
+    CommandResult* search_result2 = execute_command(search2);
+    cr_assert_eq(search_result2->code, 2);
+    cr_assert(strstr(search_result2->data, "Alice") != NULL);
+    cr_assert(strstr(search_result2->data, "Bob") != NULL);
+    free_command_result(search_result2);
+    free_command(search2, 0);
+
+    Command* del_cmd = parse_command("DEL mydb 1");
+    CommandResult* del_result = execute_command(del_cmd);
+    cr_assert_eq(del_result->code, 1);
+    free_command_result(del_result);
+    free_command(del_cmd, 0);
+
+    Command* search3 = parse_command("SEARCH mydb age 25");
+    CommandResult* search_result3 = execute_command(search3);
+    cr_assert_eq(search_result3->code, 1);
+    cr_assert(strstr(search_result3->data, "Bob") != NULL);
+    cr_assert(strstr(search_result3->data, "Alice") == NULL);
+    free_command_result(search_result3);
+    free_command(search3, 0);
+}
