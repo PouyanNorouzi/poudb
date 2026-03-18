@@ -73,8 +73,23 @@ run_client: test_client
 	@echo "Starting client..."
 	./$(BIN_DIR)/client
 
+# Valgrind memory leak targets
+VALGRIND = valgrind
+VALGRIND_FLAGS = --leak-check=full --show-leak-kinds=all --track-origins=yes --error-exitcode=1
+
+valgrind: valgrind_parser valgrind_operations
+	@echo "All Valgrind checks completed."
+
+valgrind_parser: $(BIN_DIR)/test_parser
+	@echo "Running Valgrind on parser tests..."
+	$(VALGRIND) $(VALGRIND_FLAGS) ./$(BIN_DIR)/test_parser
+
+valgrind_operations: $(BIN_DIR)/test_operations
+	@echo "Running Valgrind on operations tests..."
+	$(VALGRIND) $(VALGRIND_FLAGS) ./$(BIN_DIR)/test_operations
+
 # Clean build artifacts
 clean:
 	rm -rf $(OBJ_DIR) $(BIN_DIR)
 
-.PHONY: all clean test test_client run_server run_client run_test
+.PHONY: all clean test test_client run_server run_client run_test valgrind valgrind_parser valgrind_operations
