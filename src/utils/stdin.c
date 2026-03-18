@@ -9,7 +9,7 @@
  */
 int handle_stdin_input(void) {
     char c;
-    int ret = 0;
+    int  ret = 0;
 
     c = getchar();
 

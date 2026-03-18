@@ -1,9 +1,9 @@
 #include "db/data_model.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdint.h>
 
 #include "utils/hashmap.h"
 
@@ -24,9 +24,9 @@ typedef struct DBIndexEntry {
 } DBIndexEntry;
 
 struct DBFieldIndex {
-    int           enabled;
-    int           bucketCount;
-    FieldType     type;
+    int            enabled;
+    int            bucketCount;
+    FieldType      type;
     DBIndexEntry** buckets;
 };
 
@@ -41,15 +41,15 @@ static int  rebuild_single_index(DB* db, int fieldIdx);
 static void clear_index(DBFieldIndex* index);
 static int  ensure_index_initialized(DBFieldIndex* index, FieldType type);
 static unsigned int hash_data_value(const Data* value, FieldType type);
-static int data_value_equals(const Data* a, const Data* b, FieldType type);
-static int clone_data_value(Data* dst, const Data* src, FieldType type);
+static int  data_value_equals(const Data* a, const Data* b, FieldType type);
+static int  clone_data_value(Data* dst, const Data* src, FieldType type);
 static void free_data_value(Data* value, FieldType type);
 static DBIndexEntry* find_index_entry(DBFieldIndex* index,
-                                      const Data*  value,
-                                      unsigned int bucket);
-static int add_key_to_entry(DBIndexEntry* entry, int key);
-static void free_row_values(DB* db, Row* row);
-static void free_row_cb(Row* row, void* ctx);
+                                      const Data*   value,
+                                      unsigned int  bucket);
+static int           add_key_to_entry(DBIndexEntry* entry, int key);
+static void          free_row_values(DB* db, Row* row);
+static void          free_row_cb(Row* row, void* ctx);
 
 void init_db_storage(void) { db_list_head = NULL; }
 
@@ -190,8 +190,8 @@ DB* db_create(const char* name, Field* fields, int fieldsCount) {
     db->rowsCount = 0;
     db->nextKey   = 1;
 
-    db->indexes = (DBFieldIndex*)calloc((size_t)db->fieldsCount,
-                                        sizeof(DBFieldIndex));
+    db->indexes =
+        (DBFieldIndex*)calloc((size_t)db->fieldsCount, sizeof(DBFieldIndex));
     if(db->indexes == NULL) {
         perror("calloc");
         row_hashmap_destroy(db->rowMap, free_row_cb, db);
@@ -436,8 +436,8 @@ int db_update_row(DB*   db,
     }
 
     if(rebuild_enabled_indexes(db) != 0) {
-        // Row update succeeded; index rebuild failures are downgraded to warning
-        // and affected indexes are disabled.
+        // Row update succeeded; index rebuild failures are downgraded to
+        // warning and affected indexes are disabled.
         fprintf(stderr, "Warning: failed to rebuild indexes after UP\n");
     }
 
@@ -549,8 +549,8 @@ int db_index_collect_rows(DB*    db,
         return -2;
     }
 
-    unsigned int bucket = hash_data_value(value, index->type) %
-                          (unsigned int)index->bucketCount;
+    unsigned int bucket =
+        hash_data_value(value, index->type) % (unsigned int)index->bucketCount;
     DBIndexEntry* entry = find_index_entry(index, value, bucket);
     if(entry == NULL || entry->keyCount <= 0) {
         return 0;
@@ -618,9 +618,9 @@ static int rebuild_single_index(DB* db, int fieldIdx) {
         Data* value = &row->values[fieldIdx];
         int   key   = row->values[0].value.i;
 
-        unsigned int bucket = hash_data_value(value, index->type) %
-                              (unsigned int)index->bucketCount;
-        DBIndexEntry* entry = find_index_entry(index, value, bucket);
+        unsigned int  bucket = hash_data_value(value, index->type) %
+                               (unsigned int)index->bucketCount;
+        DBIndexEntry* entry  = find_index_entry(index, value, bucket);
 
         if(entry == NULL) {
             entry = (DBIndexEntry*)calloc(1, sizeof(DBIndexEntry));
@@ -635,7 +635,7 @@ static int rebuild_single_index(DB* db, int fieldIdx) {
                 return -1;
             }
 
-            entry->next             = index->buckets[bucket];
+            entry->next            = index->buckets[bucket];
             index->buckets[bucket] = entry;
         }
 
@@ -682,8 +682,8 @@ static int ensure_index_initialized(DBFieldIndex* index, FieldType type) {
         return -1;
     }
 
-    index->buckets = (DBIndexEntry**)calloc((size_t)defaultBuckets,
-                                            sizeof(DBIndexEntry*));
+    index->buckets =
+        (DBIndexEntry**)calloc((size_t)defaultBuckets, sizeof(DBIndexEntry*));
     if(index->buckets == NULL) {
         return -1;
     }
@@ -700,7 +700,7 @@ static unsigned int hash_data_value(const Data* value, FieldType type) {
     }
 
     switch(type) {
-        case TYPE_INT: return (unsigned int)value->value.i * 2654435761U;
+        case TYPE_INT:    return (unsigned int)value->value.i * 2654435761U;
         case TYPE_DOUBLE: {
             union {
                 double   d;
@@ -709,7 +709,7 @@ static unsigned int hash_data_value(const Data* value, FieldType type) {
             bits.d = value->value.d;
             return (unsigned int)(bits.u ^ (bits.u >> 32));
         }
-        case TYPE_BOOL: return value->value.b ? 1U : 0U;
+        case TYPE_BOOL:   return value->value.b ? 1U : 0U;
         case TYPE_STRING: {
             const unsigned char* s = (const unsigned char*)value->value.s;
             unsigned int         h = 5381U;
@@ -734,9 +734,9 @@ static int data_value_equals(const Data* a, const Data* b, FieldType type) {
     }
 
     switch(type) {
-        case TYPE_INT: return a->value.i == b->value.i;
+        case TYPE_INT:    return a->value.i == b->value.i;
         case TYPE_DOUBLE: return a->value.d == b->value.d;
-        case TYPE_BOOL: return a->value.b == b->value.b;
+        case TYPE_BOOL:   return a->value.b == b->value.b;
         case TYPE_STRING:
             if(a->value.s == NULL && b->value.s == NULL) {
                 return 1;
@@ -786,8 +786,8 @@ static void free_data_value(Data* value, FieldType type) {
 }
 
 static DBIndexEntry* find_index_entry(DBFieldIndex* index,
-                                      const Data*  value,
-                                      unsigned int bucket) {
+                                      const Data*   value,
+                                      unsigned int  bucket) {
     if(index == NULL || index->buckets == NULL ||
        bucket >= (unsigned int)index->bucketCount) {
         return NULL;
@@ -816,8 +816,10 @@ static int add_key_to_entry(DBIndexEntry* entry, int key) {
     }
 
     if(entry->keyCount == entry->keyCapacity) {
-        int newCapacity = (entry->keyCapacity == 0) ? 4 : entry->keyCapacity * 2;
-        int* newKeys = (int*)realloc(entry->keys, sizeof(int) * (size_t)newCapacity);
+        int newCapacity =
+            (entry->keyCapacity == 0) ? 4 : entry->keyCapacity * 2;
+        int* newKeys =
+            (int*)realloc(entry->keys, sizeof(int) * (size_t)newCapacity);
         if(newKeys == NULL) {
             return -1;
         }
@@ -835,7 +837,8 @@ static void free_row_values(DB* db, Row* row) {
     }
 
     for(int i = 0; i < row->valueCount; i++) {
-        if(db->fields[i].type == TYPE_STRING && row->values[i].value.s != NULL) {
+        if(db->fields[i].type == TYPE_STRING &&
+           row->values[i].value.s != NULL) {
             free((void*)row->values[i].value.s);
         }
     }
@@ -844,6 +847,4 @@ static void free_row_values(DB* db, Row* row) {
     row->valueCount = 0;
 }
 
-static void free_row_cb(Row* row, void* ctx) {
-    free_row_values((DB*)ctx, row);
-}
+static void free_row_cb(Row* row, void* ctx) { free_row_values((DB*)ctx, row); }

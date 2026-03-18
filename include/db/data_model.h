@@ -5,7 +5,7 @@
 #define MAX_DB_NAME_LENGTH    64
 #define MAX_FIELD_NAME_LENGTH 64
 #define INITIAL_ROW_CAPACITY  16
-#define MAX_ROW_CAPACITY      1048576  /* 1M rows max */
+#define MAX_ROW_CAPACITY      1048576 /* 1M rows max */
 
 /**
  * Enumeration of supported field types
@@ -51,7 +51,7 @@ typedef struct {
 /**
  * Opaque hashmap handle for row storage
  */
-typedef struct RowHashMap RowHashMap;
+typedef struct RowHashMap   RowHashMap;
 typedef struct DBFieldIndex DBFieldIndex;
 
 /**
@@ -66,13 +66,13 @@ typedef struct {
  * Database structure representing a collection/table
  */
 typedef struct {
-    char   name[MAX_DB_NAME_LENGTH]; /* Name of the database */
-    int    fieldsCount;              /* Number of fields/columns */
-    Field* fields;    /* Array of field definitions (fields[0] is the key) */
-    RowHashMap* rowMap;   /* Internal hashmap for rows */
-    DBFieldIndex* indexes; /* Per-field index metadata */
-    int         rowsCount; /* Number of rows */
-    int         nextKey;   /* Next auto-generated key value */
+    char        name[MAX_DB_NAME_LENGTH]; /* Name of the database */
+    int         fieldsCount;              /* Number of fields/columns */
+    Field*      fields; /* Array of field definitions (fields[0] is the key) */
+    RowHashMap* rowMap; /* Internal hashmap for rows */
+    DBFieldIndex* indexes;   /* Per-field index metadata */
+    int           rowsCount; /* Number of rows */
+    int           nextKey;   /* Next auto-generated key value */
 } DB;
 
 /**
@@ -107,7 +107,8 @@ void free_db_storage(void);
  * Add a database to the storage system
  *
  * @param db Pointer to the database to add
- * @return 0 on success, -1 if db is NULL, -2 if duplicate name, -3 if malloc failed
+ * @return 0 on success, -1 if db is NULL, -2 if duplicate name, -3 if malloc
+ * failed
  */
 int add_db(DB* db);
 
@@ -157,11 +158,16 @@ Row* db_get_row(DB* db, int key);
  * @param key The key of the row to update
  * @param values Array of Data values for the row (excluding key)
  * @param valueCount Number of values in the array
- * @param ignoreFlags Array of flags (1 = skip this field, 0 = update it), or NULL to update all
+ * @param ignoreFlags Array of flags (1 = skip this field, 0 = update it), or
+ * NULL to update all
  * @return 0 on success, -1 if db/values is NULL, -2 if valueCount mismatch,
  *         -3 if row not found, -4 if malloc failed
  */
-int db_update_row(DB* db, int key, Data* values, int valueCount, int* ignoreFlags);
+int db_update_row(DB*   db,
+                  int   key,
+                  Data* values,
+                  int   valueCount,
+                  int*  ignoreFlags);
 
 /**
  * Delete a row from a database by key
@@ -212,7 +218,8 @@ int db_has_index(DB* db, int fieldIdx);
  *
  * @param db Pointer to the database
  * @param fieldIdx Field index in db->fields
- * @return 0 on success, -1 on invalid input, -2 if already indexed, -3 on malloc failure
+ * @return 0 on success, -1 on invalid input, -2 if already indexed, -3 on
+ * malloc failure
  */
 int db_create_index(DB* db, int fieldIdx);
 
@@ -222,9 +229,11 @@ int db_create_index(DB* db, int fieldIdx);
  * @param db Pointer to the database
  * @param fieldIdx Field index in db->fields
  * @param value Value to search for
- * @param rowsOut Output array of internal Row pointers (caller must free the array only)
+ * @param rowsOut Output array of internal Row pointers (caller must free the
+ * array only)
  * @param rowCountOut Number of rows in rowsOut
- * @return 0 on success, -1 on invalid input, -2 if no index exists, -3 on malloc failure
+ * @return 0 on success, -1 on invalid input, -2 if no index exists, -3 on
+ * malloc failure
  */
 int db_index_collect_rows(DB*    db,
                           int    fieldIdx,

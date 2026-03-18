@@ -93,8 +93,8 @@ int row_hashmap_insert(RowHashMap* map, int key, Row row, int sizeAfterInsert) {
     node->key = key;
     node->row = row;
 
-    unsigned int bucket = hash_key(key) % (unsigned int)map->bucketCount;
-    node->next          = map->buckets[bucket];
+    unsigned int bucket  = hash_key(key) % (unsigned int)map->bucketCount;
+    node->next           = map->buckets[bucket];
     map->buckets[bucket] = node;
 
     if(should_rehash(sizeAfterInsert, map->bucketCount)) {
@@ -174,12 +174,12 @@ Row* row_hashmap_iter_next(RowHashMap* map, DBRowIterator* it) {
 }
 
 static unsigned int hash_key(int key) {
-    unsigned int x = (unsigned int)key;
-    x ^= x >> 16;
-    x *= 0x7feb352dU;
-    x ^= x >> 15;
-    x *= 0x846ca68bU;
-    x ^= x >> 16;
+    unsigned int x  = (unsigned int)key;
+    x              ^= x >> 16;
+    x              *= 0x7feb352dU;
+    x              ^= x >> 15;
+    x              *= 0x846ca68bU;
+    x              ^= x >> 16;
     return x;
 }
 
@@ -196,8 +196,8 @@ static int rehash_rows(RowHashMap* map, int newBucketCount) {
         return -1;
     }
 
-    RowNode** newBuckets = (RowNode**)calloc((size_t)newBucketCount,
-                                             sizeof(RowNode*));
+    RowNode** newBuckets =
+        (RowNode**)calloc((size_t)newBucketCount, sizeof(RowNode*));
     if(newBuckets == NULL) {
         return -1;
     }
@@ -205,11 +205,12 @@ static int rehash_rows(RowHashMap* map, int newBucketCount) {
     for(int i = 0; i < map->bucketCount; i++) {
         RowNode* node = map->buckets[i];
         while(node != NULL) {
-            RowNode* next   = node->next;
-            unsigned int bi = hash_key(node->key) % (unsigned int)newBucketCount;
-            node->next      = newBuckets[bi];
-            newBuckets[bi]  = node;
-            node            = next;
+            RowNode*     next = node->next;
+            unsigned int bi =
+                hash_key(node->key) % (unsigned int)newBucketCount;
+            node->next     = newBuckets[bi];
+            newBuckets[bi] = node;
+            node           = next;
         }
     }
 

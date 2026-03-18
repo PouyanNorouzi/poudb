@@ -18,9 +18,7 @@
 /**
  * Cleanup handler registered with atexit()
  */
-static void cleanup_handler(void) {
-    free_db_storage();
-}
+static void cleanup_handler(void) { free_db_storage(); }
 
 int main(void) {
     int  serverfd, epollfd, res, i;
@@ -98,14 +96,18 @@ int main(void) {
                         free_command(command, 0);
                     } else {
                         CommandResult* result = execute_command(command);
-                        
+
                         if(result != NULL) {
                             if(result->message != NULL) {
                                 // Send error message
-                                send_data(clientfd, result->message, strlen(result->message));
+                                send_data(clientfd,
+                                          result->message,
+                                          strlen(result->message));
                             } else if(result->data != NULL) {
                                 // Send result data (e.g., table from GET)
-                                send_data(clientfd, result->data, strlen(result->data));
+                                send_data(clientfd,
+                                          result->data,
+                                          strlen(result->data));
                             } else {
                                 // Send success code
                                 send_int(clientfd, result->code);
@@ -113,7 +115,8 @@ int main(void) {
                             free_command_result(result);
                         }
                         // Strings transferred to DB for ADD/UP operations
-                        int transferred = (command->op == OP_ADD || command->op == OP_UP);
+                        int transferred =
+                            (command->op == OP_ADD || command->op == OP_UP);
                         free_command(command, transferred);
                     }
                 }

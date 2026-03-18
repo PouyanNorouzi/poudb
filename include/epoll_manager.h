@@ -3,7 +3,7 @@
 
 #include <sys/epoll.h>
 
-typedef struct epoll_event EpollEvent ;
+typedef struct epoll_event EpollEvent;
 
 /**
  * Creates and initializes an epoll instance.
@@ -25,8 +25,12 @@ int remove_from_epoll(int epollfd, int fd);
 
 /**
  * Waits for events on the epoll instance.
- * Returns the number of file descriptors ready for the requested I/O, or -1 on error.
+ * Returns the number of file descriptors ready for the requested I/O, or -1 on
+ * error.
  */
-int wait_for_events(int epollfd, struct epoll_event *events, int maxevents, int timeout);
+int wait_for_events(int                 epollfd,
+                    struct epoll_event* events,
+                    int                 maxevents,
+                    int                 timeout);
 
 #endif /* EPOLL_MANAGER_H */

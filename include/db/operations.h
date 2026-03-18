@@ -7,24 +7,24 @@
  * Enumeration of execution error codes
  */
 typedef enum {
-    EX_SUCCESS,                 /* Operation completed successfully */
-    EX_INVALID_DATA,            /* Invalid data provided to operation */
-    EX_DB_NOT_FOUND,            /* Database not found */
-    EX_DB_ALREADY_EXISTS,       /* Database already exists */
+    EX_SUCCESS,                  /* Operation completed successfully */
+    EX_INVALID_DATA,             /* Invalid data provided to operation */
+    EX_DB_NOT_FOUND,             /* Database not found */
+    EX_DB_ALREADY_EXISTS,        /* Database already exists */
     EX_MEMORY_ALLOCATION_FAILED, /* Memory allocation failed */
-    EX_DB_CREATE_FAILED,        /* Database creation failed */
-    EX_ROW_NOT_FOUND,           /* Row not found */
-    EX_INVALID_FIELD,           /* Invalid field specified */
-    EX_TYPE_MISMATCH,           /* Data type mismatch */
-    EX_INDEX_ALREADY_EXISTS,    /* Index already exists */
-    EX_UNKNOWN_ERROR            /* Unknown error */
+    EX_DB_CREATE_FAILED,         /* Database creation failed */
+    EX_ROW_NOT_FOUND,            /* Row not found */
+    EX_INVALID_FIELD,            /* Invalid field specified */
+    EX_TYPE_MISMATCH,            /* Data type mismatch */
+    EX_INDEX_ALREADY_EXISTS,     /* Index already exists */
+    EX_UNKNOWN_ERROR             /* Unknown error */
 } ExecutionError;
 
 /**
  * Result structure for operation execution
  */
 typedef struct {
-    int         code;    /* Return code (positive for success, negative for error) */
+    int code; /* Return code (positive for success, negative for error) */
     const char* message; /* Error message (NULL on success) */
     char*       data;    /* Result data string (caller must free if not NULL) */
 } CommandResult;
@@ -44,4 +44,4 @@ CommandResult* execute_command(Command* cmd);
  */
 void free_command_result(CommandResult* result);
 
-#endif //OPERATIONS_H
+#endif  // OPERATIONS_H

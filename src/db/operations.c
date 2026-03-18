@@ -224,9 +224,7 @@ static CommandResult* execute_add(AddData* data) {
 
     int actualKey = data->autoKey ? (db->nextKey - 1) : data->key;
 
-    printf("Added row to database '%s' (key: %d)\n",
-           data->dbName,
-           actualKey);
+    printf("Added row to database '%s' (key: %d)\n", data->dbName, actualKey);
     result->code    = actualKey;
     result->message = NULL;
     result->data    = NULL;
@@ -516,7 +514,7 @@ static CommandResult* execute_search(SearchData* data) {
                                                 &matchingRows,
                                                 &matchCount);
         if(indexResult == -3) {
-            result->code    = -1;
+            result->code = -1;
             result->message =
                 EXECUTION_ERROR_MESSAGES[EX_MEMORY_ALLOCATION_FAILED];
             return result;
@@ -529,7 +527,7 @@ static CommandResult* execute_search(SearchData* data) {
     if(hasIndex != 1) {
         matchingRows = (Row**)malloc(sizeof(Row*) * db->rowsCount);
         if(matchingRows == NULL && db->rowsCount > 0) {
-            result->code    = -1;
+            result->code = -1;
             result->message =
                 EXECUTION_ERROR_MESSAGES[EX_MEMORY_ALLOCATION_FAILED];
             return result;
@@ -628,8 +626,7 @@ static CommandResult* execute_create_index(CreateIndexData* data) {
     if(createResult != 0) {
         result->code = createResult;
         if(createResult == -2) {
-            result->message =
-                EXECUTION_ERROR_MESSAGES[EX_INDEX_ALREADY_EXISTS];
+            result->message = EXECUTION_ERROR_MESSAGES[EX_INDEX_ALREADY_EXISTS];
         } else if(createResult == -3) {
             result->message =
                 EXECUTION_ERROR_MESSAGES[EX_MEMORY_ALLOCATION_FAILED];
@@ -951,12 +948,7 @@ static char* format_rows_as_table(DB* db, char** fields, int fieldCount) {
 
     // Build data lines for all rows
     for(int r = 0; r < rowCount; r++) {
-        build_data_row(&ptr,
-                       db,
-                       rows[r],
-                       fieldIndices,
-                       colWidths,
-                       numFields);
+        build_data_row(&ptr, db, rows[r], fieldIndices, colWidths, numFields);
     }
     *ptr = '\0';
 
