@@ -1,8 +1,6 @@
-#include "utils.h"
+#include "utils/stdin.h"
 
 #include <stdio.h>  // For getchar and EOF
-
-#define BUFFER_SIZE 512
 
 /**
  * Handles when there is some input in stdin

@@ -13,7 +13,7 @@
 #include "db/parser.h"
 #include "epoll_manager.h"
 #include "net.h"
-#include "utils.h"
+#include "utils/stdin.h"
 
 /**
  * Cleanup handler registered with atexit()
