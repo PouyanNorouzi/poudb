@@ -6,6 +6,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "config/runtime_config.h"
 #include "connection_manager.h"
 #include "db/data_model.h"
 #include "db/operations.h"
@@ -15,60 +16,87 @@
 #include "utils/autosave.h"
 #include "utils/stdin.h"
 
-#define AUTOSAVE_INTERVAL_MS 30000LL
+static char g_snapshotPath[RUNTIME_CONFIG_PATH_MAX] = {0};
 
 /**
  * Cleanup handler registered with atexit()
  */
 static void cleanup_handler(void) {
-    if(persistence_save_all(NULL) != 0) {
+    const char* snapshotPath = (g_snapshotPath[0] != '\0') ? g_snapshotPath : NULL;
+
+    if(persistence_save_all(snapshotPath) != 0) {
         fprintf(stderr, "Failed to save snapshot on shutdown\n");
     }
     free_db_storage();
 }
 
-int main(void) {
-    int               serverfd, eventfd, res, i;
+int main(int argc, char* argv[]) {
+    int               serverfd, eventfd, res, i, maxEvents;
     AutosaveState     autosaveState;
     bool              keepRunning;
     ConnectionManager cm;
+    RuntimeConfig     config;
     char*             data;
     Command*          command;
-    EpollEvent        events[MAX_CONNECTIONS + 2];
+    EpollEvent*       events;
+
+    res = runtime_config_init(&config, argc, argv);
+    if(res == 1) {
+        return EXIT_SUCCESS;
+    }
+    if(res != 0) {
+        return EXIT_FAILURE;
+    }
+
+    strncpy(g_snapshotPath, config.snapshotPath, sizeof(g_snapshotPath));
+    g_snapshotPath[sizeof(g_snapshotPath) - 1] = '\0';
+
+    maxEvents = config.maxConnections + 2;
+    events    = (EpollEvent*)calloc((size_t)maxEvents, sizeof(EpollEvent));
+    if(events == NULL) {
+        return EXIT_FAILURE;
+    }
 
     puts("Starting to make the server");
     init_db_storage();
-    if(persistence_load_all(NULL) != 0) {
+    if(persistence_load_all(config.snapshotPath) != 0) {
         fprintf(stderr, "Failed to load snapshot, starting with empty state\n");
     }
 
-    if(autosave_init(&autosaveState, AUTOSAVE_INTERVAL_MS) != 0) {
-        fprintf(stderr,
-                "Failed to initialize monotonic autosave timer; autosave disabled\n");
+    autosaveState.enabled = 0;
+    if(config.autosaveEnabled) {
+        if(autosave_init(&autosaveState, config.autosaveIntervalMs) != 0) {
+            fprintf(stderr,
+                    "Failed to initialize monotonic autosave timer; autosave disabled\n");
+        }
     }
 
     atexit(cleanup_handler);
 
-    res = create_server(DEFAULT_PORT);
+    res = create_server(config.port, config.maxConnections);
     if(res == -1) {
+        free(events);
         exit(EXIT_FAILURE);
     }
     serverfd = res;
-    printf("running on port %d\n", DEFAULT_PORT);
+    printf("running on port %d\n", config.port);
     puts("Type Q at anytime to exit");
 
-    if(init_connection_manager(&cm) == -1) {
+    if(init_connection_manager(&cm, config.maxConnections) == -1) {
+        free(events);
         close(serverfd);
         exit(EXIT_FAILURE);
     }
 
     if(watch_fd(&cm, serverfd, EPOLLIN) == -1) {
+        free(events);
         close(serverfd);
         destroy_connection_manager(&cm);
         exit(EXIT_FAILURE);
     }
 
     if(watch_fd(&cm, STDIN_FILENO, EPOLLIN) == -1) {
+        free(events);
         close(serverfd);
         destroy_connection_manager(&cm);
         exit(EXIT_FAILURE);
@@ -76,8 +104,9 @@ int main(void) {
 
     keepRunning = true;
     while(keepRunning) {
-        res = wait_for_events(&cm, events, MAX_CONNECTIONS + 2, 500);
+        res = wait_for_events(&cm, events, maxEvents, 500);
         if(res == -1) {
+            free(events);
             close(serverfd);
             destroy_connection_manager(&cm);
             exit(EXIT_FAILURE);
@@ -142,10 +171,11 @@ int main(void) {
             }
         }
 
-        autosave_maybe_run(&autosaveState);
+        autosave_maybe_run(&autosaveState, config.snapshotPath);
     }
 
     puts("done");
+    free(events);
     destroy_connection_manager(&cm);
     close(serverfd);
     return 0;

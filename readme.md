@@ -100,4 +100,55 @@ The compiled binary will be located in the `bin/` folder.
 ./bin/poudb
 ```
 
-More options (e.g., port, config file) will be added in later versions.
+### Runtime Options
+
+`poudb` supports built-in defaults, optional INI config files, and command-line overrides.
+
+Precedence is:
+
+1. CLI options
+2. Config file values
+3. Built-in defaults
+
+```bash
+./bin/poudb --help
+./bin/poudb --port 3010 --snapshot /tmp/poudb.snapshot
+./bin/poudb --config ./poudb.conf --autosave off
+```
+
+Supported options:
+
+* `-h, --help`
+* `-f, --config PATH`
+* `-p, --port PORT`
+* `-s, --snapshot PATH`
+* `-i, --autosave-interval MS`
+* `-m, --max-connections N`
+* `-a, --autosave on|off`
+
+### Config File
+
+Install dependency:
+
+```bash
+# Debian/Ubuntu
+sudo apt install libinih-dev
+
+# Arch
+sudo pacman -S libinih
+```
+
+Example `poudb.conf`:
+
+```ini
+[server]
+port=3005
+max_connections=5
+
+[storage]
+snapshot_path=poudb.snapshot
+
+[autosave]
+enabled=true
+interval_ms=30000
+```

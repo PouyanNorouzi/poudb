@@ -14,10 +14,14 @@
  * Creates a socket server and binds it, listening on the given port and returns
  * the file descriptor of it. returns -1 if error.
  */
-int create_server(int port) {
+int create_server(int port, int backlog) {
     int                serverfd, res;
     struct sockaddr_in address;
     int                opt = 1;
+
+    if(backlog <= 0) {
+        backlog = DEFAULT_MAX_CONNECTIONS;
+    }
 
     serverfd = socket(AF_INET, SOCK_STREAM, 0);
     if(serverfd == -1) {
@@ -46,7 +50,7 @@ int create_server(int port) {
         return -1;
     }
 
-    res = listen(serverfd, MAX_CONNECTIONS);
+    res = listen(serverfd, backlog);
     if(res == -1) {
         perror("listen");
         close(serverfd);

@@ -1,0 +1,10 @@
+[server]
+port=3005
+max_connections=5
+
+[storage]
+snapshot_path=poudb.snapshot
+
+[autosave]
+enabled=true
+interval_ms=30000

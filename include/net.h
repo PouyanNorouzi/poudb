@@ -3,9 +3,9 @@
 
 #include <stdlib.h>
 
-#define MAX_CONNECTIONS 5
+#define DEFAULT_MAX_CONNECTIONS 5
 
-int create_server(int port);
+int create_server(int port, int backlog);
 
 int accept_connection(int serverfd);
 

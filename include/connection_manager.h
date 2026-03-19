@@ -4,14 +4,13 @@
 #include <stdint.h>
 #include <sys/epoll.h>
 
-#include "net.h"
-
 typedef struct epoll_event EpollEvent;
 
 typedef struct {
     int epollfd;
-    int clients[MAX_CONNECTIONS];
+    int* clients;
     int client_count;
+    int max_clients;
 } ConnectionManager;
 
 /**
@@ -19,7 +18,7 @@ typedef struct {
  * zeroes the client array.
  * Returns 0 on success, -1 on error.
  */
-int init_connection_manager(ConnectionManager* cm);
+int init_connection_manager(ConnectionManager* cm, int maxClients);
 
 /**
  * Adds an arbitrary fd to epoll without tracking it as a client.

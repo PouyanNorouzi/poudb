@@ -31,7 +31,7 @@ int autosave_init(AutosaveState* state, long long intervalMs) {
     return 0;
 }
 
-void autosave_maybe_run(AutosaveState* state) {
+void autosave_maybe_run(AutosaveState* state, const char* snapshotPath) {
     if(state == NULL || !state->enabled) {
         return;
     }
@@ -48,7 +48,7 @@ void autosave_maybe_run(AutosaveState* state) {
         return;
     }
 
-    if(persistence_save_all(NULL) != 0) {
+    if(persistence_save_all(snapshotPath) != 0) {
         fprintf(stderr, "Failed to save periodic snapshot\n");
     }
 

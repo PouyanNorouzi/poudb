@@ -1,18 +1,32 @@
 #include "connection_manager.h"
 
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 
-int init_connection_manager(ConnectionManager* cm) {
+int init_connection_manager(ConnectionManager* cm, int maxClients) {
+    if(cm == NULL || maxClients <= 0) {
+        return -1;
+    }
+
     cm->epollfd      = epoll_create1(0);
     cm->client_count = 0;
-    memset(cm->clients, -1, sizeof(cm->clients));
+    cm->max_clients  = maxClients;
+    cm->clients      = (int*)malloc((size_t)maxClients * sizeof(int));
 
     if(cm->epollfd == -1) {
         perror("epoll_create1");
         return -1;
     }
+
+    if(cm->clients == NULL) {
+        close(cm->epollfd);
+        cm->epollfd = -1;
+        return -1;
+    }
+
+    memset(cm->clients, -1, (size_t)maxClients * sizeof(int));
     return 0;
 }
 
@@ -29,8 +43,8 @@ int watch_fd(ConnectionManager* cm, int fd, uint32_t events) {
 }
 
 int add_client(ConnectionManager* cm, int clientfd) {
-    if(cm->client_count >= MAX_CONNECTIONS) {
-        fprintf(stderr, "add_client: at capacity (%d)\n", MAX_CONNECTIONS);
+    if(cm->client_count >= cm->max_clients) {
+        fprintf(stderr, "add_client: at capacity (%d)\n", cm->max_clients);
         return -1;
     }
 
@@ -98,7 +112,17 @@ void close_all_clients(ConnectionManager* cm) {
 }
 
 void destroy_connection_manager(ConnectionManager* cm) {
+    if(cm == NULL) {
+        return;
+    }
+
     close_all_clients(cm);
-    close(cm->epollfd);
-    cm->epollfd = -1;
+    if(cm->epollfd != -1) {
+        close(cm->epollfd);
+        cm->epollfd = -1;
+    }
+
+    free(cm->clients);
+    cm->clients = NULL;
+    cm->max_clients = 0;
 }
