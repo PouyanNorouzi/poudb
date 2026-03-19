@@ -10,13 +10,19 @@
 #include "db/data_model.h"
 #include "db/operations.h"
 #include "db/parser.h"
+#include "db/persistence.h"
 #include "net.h"
 #include "utils/stdin.h"
 
 /**
  * Cleanup handler registered with atexit()
  */
-static void cleanup_handler(void) { free_db_storage(); }
+static void cleanup_handler(void) {
+    if(persistence_save_all(NULL) != 0) {
+        fprintf(stderr, "Failed to save snapshot on shutdown\n");
+    }
+    free_db_storage();
+}
 
 int main(void) {
     int               serverfd, eventfd, res, i;
@@ -28,6 +34,9 @@ int main(void) {
 
     puts("Starting to make the server");
     init_db_storage();
+    if(persistence_load_all(NULL) != 0) {
+        fprintf(stderr, "Failed to load snapshot, starting with empty state\n");
+    }
     atexit(cleanup_handler);
 
     res = create_server(DEFAULT_PORT);

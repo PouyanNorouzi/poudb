@@ -75,6 +75,8 @@ typedef struct {
     int           nextKey;   /* Next auto-generated key value */
 } DB;
 
+typedef int (*DBVisitor)(DB* db, void* ctx);
+
 /**
  * Create a new database with the given name and fields
  *
@@ -127,6 +129,15 @@ DB* find_db(const char* name);
  * @return 0 on success, -1 if not found
  */
 int remove_db(const char* name);
+
+/**
+ * Visit every database in storage
+ *
+ * @param visitor Callback invoked for each DB
+ * @param ctx Opaque pointer passed to visitor
+ * @return 0 on success, -1 on invalid input, or callback return value
+ */
+int db_for_each(DBVisitor visitor, void* ctx);
 
 /**
  * Add a row to a database

@@ -29,3 +29,6 @@ poudb
 
 # compile commands
 compile_commands.json
+
+# the db snapshot for testing
+poudb.snapshot

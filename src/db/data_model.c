@@ -145,6 +145,25 @@ int remove_db(const char* name) {
     return -1;  // Not found
 }
 
+int db_for_each(DBVisitor visitor, void* ctx) {
+    if(visitor == NULL) {
+        return -1;
+    }
+
+    DBNode* current = db_list_head;
+    while(current != NULL) {
+        if(current->db != NULL) {
+            int rc = visitor(current->db, ctx);
+            if(rc != 0) {
+                return rc;
+            }
+        }
+        current = current->next;
+    }
+
+    return 0;
+}
+
 DB* db_create(const char* name, Field* fields, int fieldsCount) {
     if(name == NULL || fields == NULL || fieldsCount <= 0) {
         return NULL;
