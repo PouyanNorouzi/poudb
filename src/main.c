@@ -12,7 +12,10 @@
 #include "db/parser.h"
 #include "db/persistence.h"
 #include "net.h"
+#include "utils/autosave.h"
 #include "utils/stdin.h"
+
+#define AUTOSAVE_INTERVAL_MS 30000LL
 
 /**
  * Cleanup handler registered with atexit()
@@ -26,6 +29,7 @@ static void cleanup_handler(void) {
 
 int main(void) {
     int               serverfd, eventfd, res, i;
+    AutosaveState     autosaveState;
     bool              keepRunning;
     ConnectionManager cm;
     char*             data;
@@ -37,6 +41,12 @@ int main(void) {
     if(persistence_load_all(NULL) != 0) {
         fprintf(stderr, "Failed to load snapshot, starting with empty state\n");
     }
+
+    if(autosave_init(&autosaveState, AUTOSAVE_INTERVAL_MS) != 0) {
+        fprintf(stderr,
+                "Failed to initialize monotonic autosave timer; autosave disabled\n");
+    }
+
     atexit(cleanup_handler);
 
     res = create_server(DEFAULT_PORT);
@@ -131,6 +141,8 @@ int main(void) {
                 puts("Unknown event occured skipping");
             }
         }
+
+        autosave_maybe_run(&autosaveState);
     }
 
     puts("done");
