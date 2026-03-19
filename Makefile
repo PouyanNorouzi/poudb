@@ -6,6 +6,12 @@ LDFLAGS = -linih
 SRC_DIR = src
 OBJ_DIR = build
 BIN_DIR = bin
+PREFIX ?= /usr/local
+DESTDIR ?=
+RUN_USER ?= poudb
+RUN_GROUP ?= poudb
+INSTALL_SCRIPT = scripts/install.sh
+UNINSTALL_SCRIPT = scripts/uninstall.sh
 
 # Test Settings
 TEST_DIR = test
@@ -104,4 +110,10 @@ valgrind_config: $(BIN_DIR)/test_config
 clean:
 	rm -rf $(OBJ_DIR) $(BIN_DIR)
 
-.PHONY: all clean test test_client run_server run_client run_test valgrind valgrind_parser valgrind_operations valgrind_config test_config
+install: all
+	PREFIX="$(PREFIX)" DESTDIR="$(DESTDIR)" RUN_USER="$(RUN_USER)" RUN_GROUP="$(RUN_GROUP)" BINARY_NAME="$(TARGET)" ./$(INSTALL_SCRIPT)
+
+uninstall:
+	PREFIX="$(PREFIX)" DESTDIR="$(DESTDIR)" BINARY_NAME="$(TARGET)" ./$(UNINSTALL_SCRIPT)
+
+.PHONY: all clean install uninstall test test_client run_server run_client run_test valgrind valgrind_parser valgrind_operations valgrind_config test_config

@@ -3,7 +3,7 @@ port=3005
 max_connections=5
 
 [storage]
-snapshot_path=poudb.snapshot
+snapshot_path=/var/lib/poudb/poudb.snapshot
 
 [autosave]
 enabled=true

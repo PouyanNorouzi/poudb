@@ -94,6 +94,47 @@ make
 
 The compiled binary will be located in the `bin/` folder.
 
+## Install
+
+The project provides script-based installation with Make wrappers.
+
+Install using defaults:
+
+```bash
+sudo make install
+```
+
+Install with a different prefix:
+
+```bash
+sudo make install PREFIX=/usr
+```
+
+Stage files for packaging:
+
+```bash
+make install DESTDIR=/tmp/poudb-stage
+```
+
+Direct script usage is also supported:
+
+```bash
+sudo PREFIX=/usr/local RUN_USER=poudb RUN_GROUP=poudb ./scripts/install.sh
+```
+
+Uninstall:
+
+```bash
+sudo make uninstall
+```
+
+Notes:
+
+* Binary path: `/usr/local/bin/poudb` by default
+* Config path: `/etc/poudb/poudb.conf`
+* Data path: `/var/lib/poudb`
+* Runtime config is still explicit; pass `--config /etc/poudb/poudb.conf` when starting the server.
+
 ## Running the Server
 
 ```bash
@@ -146,7 +187,7 @@ port=3005
 max_connections=5
 
 [storage]
-snapshot_path=poudb.snapshot
+snapshot_path=/var/lib/poudb/poudb.snapshot
 
 [autosave]
 enabled=true
