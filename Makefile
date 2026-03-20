@@ -10,6 +10,7 @@ PREFIX ?= /usr/local
 DESTDIR ?=
 RUN_USER ?= poudb
 RUN_GROUP ?= poudb
+SERVICE_NAME ?= poudb.service
 INSTALL_SCRIPT = scripts/install.sh
 UNINSTALL_SCRIPT = scripts/uninstall.sh
 
@@ -111,9 +112,9 @@ clean:
 	rm -rf $(OBJ_DIR) $(BIN_DIR)
 
 install: all
-	PREFIX="$(PREFIX)" DESTDIR="$(DESTDIR)" RUN_USER="$(RUN_USER)" RUN_GROUP="$(RUN_GROUP)" BINARY_NAME="$(TARGET)" ./$(INSTALL_SCRIPT)
+	PREFIX="$(PREFIX)" DESTDIR="$(DESTDIR)" RUN_USER="$(RUN_USER)" RUN_GROUP="$(RUN_GROUP)" BINARY_NAME="$(TARGET)" SERVICE_NAME="$(SERVICE_NAME)" ./$(INSTALL_SCRIPT)
 
 uninstall:
-	PREFIX="$(PREFIX)" DESTDIR="$(DESTDIR)" BINARY_NAME="$(TARGET)" ./$(UNINSTALL_SCRIPT)
+	PREFIX="$(PREFIX)" DESTDIR="$(DESTDIR)" BINARY_NAME="$(TARGET)" SERVICE_NAME="$(SERVICE_NAME)" ./$(UNINSTALL_SCRIPT)
 
 .PHONY: all clean install uninstall test test_client run_server run_client run_test valgrind valgrind_parser valgrind_operations valgrind_config test_config

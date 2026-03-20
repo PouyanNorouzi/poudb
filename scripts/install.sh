@@ -6,6 +6,7 @@ DESTDIR="${DESTDIR:-}"
 RUN_USER="${RUN_USER:-poudb}"
 RUN_GROUP="${RUN_GROUP:-poudb}"
 BINARY_NAME="${BINARY_NAME:-poudb}"
+SERVICE_NAME="${SERVICE_NAME:-poudb.service}"
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPO_ROOT=$(CDPATH= cd -- "${SCRIPT_DIR}/.." && pwd)
@@ -17,6 +18,9 @@ BIN_DIR="${DESTDIR}${PREFIX}/bin"
 ETC_DIR="${DESTDIR}/etc/poudb"
 DATA_DIR="${DESTDIR}/var/lib/poudb"
 CONF_DST="${ETC_DIR}/poudb.conf"
+SYSTEMD_DIR="${DESTDIR}/etc/systemd/system"
+SYSTEMD_UNIT="${SYSTEMD_DIR}/${SERVICE_NAME}"
+SYSTEM_BINARY="${PREFIX}/bin/${BINARY_NAME}"
 
 command_exists() {
     command -v "$1" >/dev/null 2>&1
@@ -62,6 +66,26 @@ else
     install -m 0644 "${CONF_SRC}" "${CONF_DST}"
 fi
 
+install -d -m 0755 "${SYSTEMD_DIR}"
+cat > "${SYSTEMD_UNIT}" <<EOF
+[Unit]
+Description=poudb database server
+After=network.target
+
+[Service]
+Type=simple
+User=${RUN_USER}
+Group=${RUN_GROUP}
+WorkingDirectory=/var/lib/poudb
+ExecStart=${SYSTEM_BINARY} --config /etc/poudb/poudb.conf
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+chmod 0644 "${SYSTEMD_UNIT}"
+
 if [ "$(id -u)" -eq 0 ] && [ -z "${DESTDIR}" ]; then
     ensure_group
     ensure_user
@@ -76,6 +100,14 @@ else
     echo "Skipping user/group creation and ownership changes (non-root or DESTDIR set)"
 fi
 
+if [ "$(id -u)" -eq 0 ] && [ -z "${DESTDIR}" ] && command_exists systemctl; then
+    systemctl daemon-reload || true
+    systemctl enable "${SERVICE_NAME}" || true
+else
+    echo "Skipping systemd enable step (non-root, DESTDIR set, or systemctl unavailable)"
+fi
+
 echo "Installed ${BINARY_NAME} to ${BIN_DIR}/${BINARY_NAME}"
 echo "Config path: ${CONF_DST}"
 echo "Data path: ${DATA_DIR}"
+echo "Systemd unit: ${SYSTEMD_UNIT}"

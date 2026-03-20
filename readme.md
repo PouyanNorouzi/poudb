@@ -119,7 +119,7 @@ make install DESTDIR=/tmp/poudb-stage
 Direct script usage is also supported:
 
 ```bash
-sudo PREFIX=/usr/local RUN_USER=poudb RUN_GROUP=poudb ./scripts/install.sh
+sudo PREFIX=/usr/local RUN_USER=poudb RUN_GROUP=poudb SERVICE_NAME=poudb.service ./scripts/install.sh
 ```
 
 Uninstall:
@@ -133,7 +133,18 @@ Notes:
 * Binary path: `/usr/local/bin/poudb` by default
 * Config path: `/etc/poudb/poudb.conf`
 * Data path: `/var/lib/poudb`
+* Systemd unit path: `/etc/systemd/system/poudb.service`
+* `make install` enables the service on boot when run as root without `DESTDIR`
 * Runtime config is still explicit; pass `--config /etc/poudb/poudb.conf` when starting the server.
+
+Manage the service:
+
+```bash
+sudo systemctl status poudb
+sudo systemctl start poudb
+sudo systemctl restart poudb
+sudo systemctl disable --now poudb
+```
 
 ## Running the Server
 
