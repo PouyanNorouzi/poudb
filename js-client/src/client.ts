@@ -1,6 +1,6 @@
-import { ReconnectExhaustedError } from "./errors";
-import { PoudbConnection } from "./net/connection";
-import { discriminateResponse } from "./net/response-discriminator";
+import { ReconnectExhaustedError } from "./errors.js";
+import { PoudbConnection } from "./net/connection.js";
+import { discriminateResponse } from "./net/response-discriminator.js";
 import {
     buildAdd,
     buildCount,
@@ -11,8 +11,8 @@ import {
     buildGetAll,
     buildSearch,
     buildUp,
-} from "./protocol/commands";
-import { assertCode, assertTable } from "./operations";
+} from "./protocol/commands.js";
+import { assertCode, assertTable } from "./operations.js";
 import {
     ClientOptions,
     CommandResponse,
@@ -21,7 +21,7 @@ import {
     QueryResult,
     SchemaField,
     UpdateValue,
-} from "./types";
+} from "./types.js";
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 3005;

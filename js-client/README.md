@@ -5,13 +5,13 @@ TypeScript-first client library for poudb.
 ## Install
 
 ```bash
-npm install @pouyan/poudb-client
+npm install poudb-client
 ```
 
 ## Quick Start
 
 ```ts
-import { PoudbClient } from "@pouyan/poudb-client";
+import { PoudbClient } from "poudb-client";
 
 const client = new PoudbClient();
 await client.connect();

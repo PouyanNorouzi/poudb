@@ -28,6 +28,7 @@
 - Run client integration tests against a live server: `export POUDB_INTEGRATION=1 && npm run test:integration`.
 - Build package artifacts: `npm run build`.
 - Keep integration assertions order-agnostic for `GET_ALL` and `SEARCH` row sets.
+- Update `js-client/CHANGELOG.md` with each user-visible `js-client/` change in the same PR.
 
 ## Conventions
 - Keep Linux-specific networking assumptions (epoll, `sys/epoll.h`) unless the task explicitly asks for portability changes.

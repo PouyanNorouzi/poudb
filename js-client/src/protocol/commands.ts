@@ -1,5 +1,5 @@
-import { CommandValue, SchemaField, UpdateValue } from "../types";
-import { formatValue, joinValues } from "./escaping";
+import { CommandValue, SchemaField, UpdateValue } from "../types.js";
+import { formatValue, joinValues } from "./escaping.js";
 
 function fieldsSegment(fields?: string[]): string {
     if (!fields || fields.length === 0) {

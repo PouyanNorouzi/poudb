@@ -1,5 +1,5 @@
 import net from "node:net";
-import { ConnectionClosedError, RequestTimeoutError } from "../errors";
+import { ConnectionClosedError, RequestTimeoutError } from "../errors.js";
 
 interface PendingRequest {
     command: string;

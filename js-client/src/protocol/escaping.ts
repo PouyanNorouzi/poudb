@@ -1,4 +1,4 @@
-import { CommandValue } from "../types";
+import { CommandValue } from "../types.js";
 
 export function escapeString(value: string): string {
     return value

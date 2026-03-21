@@ -1,6 +1,6 @@
-import { ProtocolParseError } from "../errors";
-import { parseTable } from "../parsers/table";
-import { CodeResponse, CommandResponse, MessageResponse, TableResponse } from "../types";
+import { ProtocolParseError } from "../errors.js";
+import { parseTable } from "../parsers/table.js";
+import { CodeResponse, CommandResponse, MessageResponse, TableResponse } from "../types.js";
 
 function isNumericCode(text: string): boolean {
     return /^-?\d+$/.test(text);

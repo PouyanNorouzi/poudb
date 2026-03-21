@@ -1,5 +1,5 @@
-import { ServerMessageError } from "./errors";
-import { CommandResponse, ParsedTable, QueryResult } from "./types";
+import { ServerMessageError } from "./errors.js";
+import { CommandResponse, ParsedTable, QueryResult } from "./types.js";
 
 export function assertCode(response: CommandResponse): number {
     if (response.kind === "message") {

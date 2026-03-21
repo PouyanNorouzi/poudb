@@ -1,4 +1,4 @@
-import { ParsedTable } from "../types";
+import { ParsedTable } from "../types.js";
 
 function splitCells(line: string): string[] {
     const trimmed = line.trim();

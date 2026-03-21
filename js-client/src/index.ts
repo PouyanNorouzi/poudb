@@ -1,4 +1,4 @@
-export { PoudbClient } from "./client";
+export { PoudbClient } from "./client.js";
 export {
     ConnectionClosedError,
     PoudbClientError,
@@ -6,8 +6,8 @@ export {
     ReconnectExhaustedError,
     RequestTimeoutError,
     ServerMessageError,
-} from "./errors";
-export { parseTable } from "./parsers/table";
+} from "./errors.js";
+export { parseTable } from "./parsers/table.js";
 export {
     buildAdd,
     buildCount,
@@ -18,7 +18,7 @@ export {
     buildGetAll,
     buildSearch,
     buildUp,
-} from "./protocol/commands";
+} from "./protocol/commands.js";
 export type {
     ClientOptions,
     CodeResponse,
@@ -32,4 +32,4 @@ export type {
     SchemaType,
     TableResponse,
     UpdateValue,
-} from "./types";
+} from "./types.js";
