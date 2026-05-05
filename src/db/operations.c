@@ -7,6 +7,7 @@
 
 #include "auth.h"
 #include "db/data_model.h"
+#include "utils/log.h"
 
 /**
  * Execution error messages corresponding to ExecutionError enum
@@ -73,13 +74,16 @@ CommandResult* execute_command(Command* cmd) {
     }
 
     if(cmd == NULL) {
+        log_debug("execute_command: received NULL command");
         result->code    = -1;
         result->message = EXECUTION_ERROR_MESSAGES[EX_INVALID_DATA];
         return result;
     }
 
+    log_debug("execute_command: dispatching op=%d", (int)cmd->op);
+
     if(cmd->op == OP_ERROR) {
-        fprintf(stderr, "Error: %s\n", cmd->data.error);
+        log_info("Client parse error: %s", cmd->data.error);
         result->code    = -1;
         result->message = cmd->data.error;
         return result;
@@ -105,7 +109,7 @@ CommandResult* execute_command(Command* cmd) {
             if(result == NULL) {
                 return NULL;
             }
-            fprintf(stderr, "Unknown operation\n");
+            log_warn("Unknown operation");
             result->code    = -1;
             result->message = EXECUTION_ERROR_MESSAGES[EX_UNKNOWN_ERROR];
             return result;
@@ -126,6 +130,8 @@ void free_command_result(CommandResult* result) {
  * Execute an ADD_KEY operation: generate a token, store its hash, return token.
  */
 CommandResult* execute_add_key(const AddKeyData* data) {
+    log_debug("ADD_KEY: name='%s' role=%d", data->name, (int)data->role);
+
     CommandResult* result = (CommandResult*)malloc(sizeof(CommandResult));
     if(result == NULL) {
         return NULL;
@@ -140,6 +146,7 @@ CommandResult* execute_add_key(const AddKeyData* data) {
         return result;
     }
 
+    log_debug("ADD_KEY: generating token");
     if(auth_generate_token(token) != 0) {
         free(token);
         result->code    = -1;
@@ -147,6 +154,7 @@ CommandResult* execute_add_key(const AddKeyData* data) {
         return result;
     }
 
+    log_debug("ADD_KEY: storing key in auth store");
     if(auth_add_key(&g_auth_store, data->name, token, data->role) != 0) {
         free(token);
         result->code    = -1;
@@ -154,6 +162,7 @@ CommandResult* execute_add_key(const AddKeyData* data) {
         return result;
     }
 
+    log_debug("ADD_KEY: key '%s' added successfully", data->name);
     /* Return the raw token in data (shown to the caller exactly once) */
     result->code = 1;
     result->data = token;
@@ -164,6 +173,8 @@ CommandResult* execute_add_key(const AddKeyData* data) {
  * Execute a DEL_KEY operation: remove a key from the auth store.
  */
 CommandResult* execute_del_key(const DelKeyData* data) {
+    log_debug("DEL_KEY: name='%s'", data->name);
+
     CommandResult* result = (CommandResult*)malloc(sizeof(CommandResult));
     if(result == NULL) {
         return NULL;
@@ -172,11 +183,13 @@ CommandResult* execute_del_key(const DelKeyData* data) {
     result->message = NULL;
 
     if(auth_del_key(&g_auth_store, data->name) != 0) {
+        log_debug("DEL_KEY: key '%s' not found", data->name);
         result->code    = -1;
         result->message = "Key not found";
         return result;
     }
 
+    log_debug("DEL_KEY: key '%s' removed", data->name);
     result->code = 1;
     return result;
 }
@@ -185,6 +198,8 @@ CommandResult* execute_del_key(const DelKeyData* data) {
  * Execute a LIST_KEYS operation: return a table of {name, role}.
  */
 CommandResult* execute_list_keys(void) {
+    log_debug("LIST_KEYS: listing %d key(s)", g_auth_store.count);
+
     CommandResult* result = (CommandResult*)malloc(sizeof(CommandResult));
     if(result == NULL) {
         return NULL;
@@ -228,49 +243,55 @@ CommandResult* execute_list_keys(void) {
  * Execute a CREATE operation
  */
 static CommandResult* execute_create(CreateData* data) {
+    log_debug("CREATE: db='%s' fieldCount=%d",
+              data ? data->dbName : "(null)",
+              data ? data->fieldCount : 0);
+
     CommandResult* result = (CommandResult*)malloc(sizeof(CommandResult));
     if(result == NULL) {
         return NULL;
     }
 
     if(data == NULL || data->fields == NULL || data->fieldCount <= 0) {
-        fprintf(stderr, "Invalid CREATE data\n");
+        log_error("Invalid CREATE data");
         result->code    = -1;
         result->message = EXECUTION_ERROR_MESSAGES[EX_INVALID_DATA];
         return result;
     }
 
+    log_debug("CREATE: allocating DB structure for '%s'", data->dbName);
     // Create the database
     DB* db = db_create(data->dbName, data->fields, data->fieldCount);
     if(db == NULL) {
-        fprintf(stderr, "Failed to create database '%s'\n", data->dbName);
+        log_error("Failed to create database '%s'", data->dbName);
         result->code    = -1;
         result->message = EXECUTION_ERROR_MESSAGES[EX_DB_CREATE_FAILED];
         return result;
     }
 
+    log_debug("CREATE: registering '%s' in storage", data->dbName);
     // Add to storage (checks for duplicates)
     int add_result = add_db(db);
     if(add_result != 0) {
         if(add_result == -2) {
-            fprintf(stderr, "Database '%s' already exists\n", data->dbName);
+            log_warn("Database '%s' already exists", data->dbName);
             result->message = EXECUTION_ERROR_MESSAGES[EX_DB_ALREADY_EXISTS];
         } else if(add_result == -3) {
-            fprintf(stderr,
-                    "Memory allocation failed when adding database '%s'\n",
+            log_error("Memory allocation failed when adding database '%s'",
                     data->dbName);
             result->message =
                 EXECUTION_ERROR_MESSAGES[EX_MEMORY_ALLOCATION_FAILED];
         } else {
-            fprintf(stderr, "Failed to add database '%s'\n", data->dbName);
+            log_error("Failed to add database '%s'", data->dbName);
             result->message = EXECUTION_ERROR_MESSAGES[EX_UNKNOWN_ERROR];
         }
         db_free(db);
         result->code = add_result;
+        result->data = NULL;
         return result;
     }
 
-    printf("Database '%s' created successfully with %d fields\n",
+    log_info("Database '%s' created successfully with %d fields",
            data->dbName,
            data->fieldCount);
     result->code    = data->fieldCount;
@@ -283,6 +304,9 @@ static CommandResult* execute_create(CreateData* data) {
  * Execute an ADD operation
  */
 static CommandResult* execute_add(AddData* data) {
+    log_debug("ADD: db='%s' valueCount=%d autoKey=%d key=%d",
+              data->dbName, data->valueCount, data->autoKey, data->key);
+
     CommandResult* result = (CommandResult*)malloc(sizeof(CommandResult));
     if(result == NULL) {
         return NULL;
@@ -290,6 +314,7 @@ static CommandResult* execute_add(AddData* data) {
 
     DB* db = find_db(data->dbName);
     if(db == NULL) {
+        log_debug("ADD: db '%s' not found", data->dbName);
         result->code    = -1;
         result->message = EXECUTION_ERROR_MESSAGES[EX_DB_NOT_FOUND];
         return result;
@@ -297,11 +322,14 @@ static CommandResult* execute_add(AddData* data) {
 
     // valueCount should match fieldsCount - 1 (excluding auto-generated key)
     if(db->fieldsCount - 1 != data->valueCount) {
+        log_debug("ADD: value count mismatch (got %d, expected %d)",
+                  data->valueCount, db->fieldsCount - 1);
         result->code    = -1;
         result->message = EXECUTION_ERROR_MESSAGES[EX_TYPE_MISMATCH];
         return result;
     }
 
+    log_debug("ADD: validating value types for '%s'", data->dbName);
     // Validate that value types match field types
     if(validate_value_types(db, data->values, data->valueCount) != 0) {
         result->code    = -1;
@@ -311,6 +339,7 @@ static CommandResult* execute_add(AddData* data) {
 
     // Use -1 for auto-generated key, otherwise use provided key
     int key = data->autoKey ? -1 : data->key;
+    log_debug("ADD: inserting row into '%s' (requested key=%d)", data->dbName, key);
 
     int add_result = db_add_row(db, key, data->values, data->valueCount);
     if(add_result != 0) {
@@ -330,7 +359,7 @@ static CommandResult* execute_add(AddData* data) {
 
     int actualKey = data->autoKey ? (db->nextKey - 1) : data->key;
 
-    printf("Added row to database '%s' (key: %d)\n", data->dbName, actualKey);
+    log_debug("Added row to database '%s' (key: %d)", data->dbName, actualKey);
     result->code    = actualKey;
     result->message = NULL;
     result->data    = NULL;
@@ -341,6 +370,11 @@ static CommandResult* execute_add(AddData* data) {
  * Execute an UP (update) operation
  */
 static CommandResult* execute_up(UpdateData* data) {
+    log_debug("UP: db='%s' key=%d valueCount=%d",
+              data ? data->dbName : "(null)",
+              data ? data->key : -1,
+              data ? data->valueCount : 0);
+
     CommandResult* result = (CommandResult*)malloc(sizeof(CommandResult));
     if(result == NULL) {
         return NULL;
@@ -354,6 +388,7 @@ static CommandResult* execute_up(UpdateData* data) {
 
     DB* db = find_db(data->dbName);
     if(db == NULL) {
+        log_debug("UP: db '%s' not found", data->dbName);
         result->code    = -1;
         result->message = EXECUTION_ERROR_MESSAGES[EX_DB_NOT_FOUND];
         return result;
@@ -361,11 +396,14 @@ static CommandResult* execute_up(UpdateData* data) {
 
     // valueCount should match fieldsCount - 1 (excluding auto-generated key)
     if(db->fieldsCount - 1 != data->valueCount) {
+        log_debug("UP: value count mismatch (got %d, expected %d)",
+                  data->valueCount, db->fieldsCount - 1);
         result->code    = -1;
         result->message = EXECUTION_ERROR_MESSAGES[EX_TYPE_MISMATCH];
         return result;
     }
 
+    log_debug("UP: validating types for %d field(s)", data->valueCount);
     // Validate that non-ignored value types match field types
     for(int i = 0; i < data->valueCount; i++) {
         if(data->ignoreFlags != NULL && data->ignoreFlags[i]) {
@@ -392,6 +430,7 @@ static CommandResult* execute_up(UpdateData* data) {
         }
     }
 
+    log_debug("UP: applying update to row %d in '%s'", data->key, data->dbName);
     int update_result = db_update_row(db,
                                       data->key,
                                       data->values,
@@ -410,7 +449,7 @@ static CommandResult* execute_up(UpdateData* data) {
         return result;
     }
 
-    printf("Updated row in database '%s' (key: %d)\n", data->dbName, data->key);
+    log_debug("Updated row in database '%s' (key: %d)", data->dbName, data->key);
     result->code    = data->key;
     result->message = NULL;
     result->data    = NULL;
@@ -421,6 +460,11 @@ static CommandResult* execute_up(UpdateData* data) {
  * Execute a GET operation
  */
 static CommandResult* execute_get(GetData* data) {
+    log_debug("GET: db='%s' key=%d fieldCount=%d",
+              data ? data->dbName : "(null)",
+              data ? data->key : -1,
+              data ? data->fieldCount : 0);
+
     CommandResult* result = (CommandResult*)malloc(sizeof(CommandResult));
     if(result == NULL) {
         return NULL;
@@ -435,6 +479,7 @@ static CommandResult* execute_get(GetData* data) {
 
     DB* db = find_db(data->dbName);
     if(db == NULL) {
+        log_debug("GET: db '%s' not found", data->dbName);
         result->code    = -1;
         result->message = EXECUTION_ERROR_MESSAGES[EX_DB_NOT_FOUND];
         return result;
@@ -442,8 +487,10 @@ static CommandResult* execute_get(GetData* data) {
 
     // Validate field names if specific fields are requested
     if(data->fields != NULL && data->fieldCount > 0) {
+        log_debug("GET: validating %d requested field name(s)", data->fieldCount);
         for(int i = 0; i < data->fieldCount; i++) {
             if(find_field_index(db, data->fields[i]) == -1) {
+                log_debug("GET: unknown field '%s'", data->fields[i]);
                 result->code    = -1;
                 result->message = EXECUTION_ERROR_MESSAGES[EX_INVALID_FIELD];
                 return result;
@@ -451,14 +498,17 @@ static CommandResult* execute_get(GetData* data) {
         }
     }
 
+    log_debug("GET: fetching row %d from '%s'", data->key, data->dbName);
     // Get the row
     Row* row = db_get_row(db, data->key);
     if(row == NULL) {
+        log_debug("GET: row %d not found in '%s'", data->key, data->dbName);
         result->code    = -1;
         result->message = EXECUTION_ERROR_MESSAGES[EX_ROW_NOT_FOUND];
         return result;
     }
 
+    log_debug("GET: formatting row %d as table", data->key);
     // Format the row as a table
     char* table = format_row_as_table(db, row, data->fields, data->fieldCount);
     db_free_row(db, row);
@@ -469,6 +519,7 @@ static CommandResult* execute_get(GetData* data) {
         return result;
     }
 
+    log_debug("GET: returning row %d from '%s'", data->key, data->dbName);
     result->code    = data->key;
     result->message = NULL;
     result->data    = table;
@@ -479,6 +530,10 @@ static CommandResult* execute_get(GetData* data) {
  * Execute a DEL (delete) operation
  */
 static CommandResult* execute_del(DeleteData* data) {
+    log_debug("DEL: db='%s' key=%d",
+              data ? data->dbName : "(null)",
+              data ? data->key : -1);
+
     CommandResult* result = (CommandResult*)malloc(sizeof(CommandResult));
     if(result == NULL) {
         return NULL;
@@ -493,11 +548,13 @@ static CommandResult* execute_del(DeleteData* data) {
 
     DB* db = find_db(data->dbName);
     if(db == NULL) {
+        log_debug("DEL: db '%s' not found", data->dbName);
         result->code    = -1;
         result->message = EXECUTION_ERROR_MESSAGES[EX_DB_NOT_FOUND];
         return result;
     }
 
+    log_debug("DEL: removing row %d from '%s'", data->key, data->dbName);
     int delete_result = db_delete_row(db, data->key);
     if(delete_result != 0) {
         result->code = delete_result;
@@ -509,7 +566,7 @@ static CommandResult* execute_del(DeleteData* data) {
         return result;
     }
 
-    printf("Deleted row from database '%s' (key: %d)\n",
+    log_debug("Deleted row from database '%s' (key: %d)",
            data->dbName,
            data->key);
     result->code    = data->key;
@@ -521,6 +578,10 @@ static CommandResult* execute_del(DeleteData* data) {
  * Execute a GET_ALL operation
  */
 static CommandResult* execute_get_all(GetAllData* data) {
+    log_debug("GET_ALL: db='%s' fieldCount=%d",
+              data ? data->dbName : "(null)",
+              data ? data->fieldCount : 0);
+
     CommandResult* result = (CommandResult*)malloc(sizeof(CommandResult));
     if(result == NULL) {
         return NULL;
@@ -535,15 +596,19 @@ static CommandResult* execute_get_all(GetAllData* data) {
 
     DB* db = find_db(data->dbName);
     if(db == NULL) {
+        log_debug("GET_ALL: db '%s' not found", data->dbName);
         result->code    = -EX_DB_NOT_FOUND;
         result->message = EXECUTION_ERROR_MESSAGES[EX_DB_NOT_FOUND];
         return result;
     }
 
+    log_debug("GET_ALL: '%s' has %d row(s)", data->dbName, db->rowsCount);
     // Validate field names if specific fields are requested
     if(data->fields != NULL && data->fieldCount > 0) {
+        log_debug("GET_ALL: validating %d requested field name(s)", data->fieldCount);
         for(int i = 0; i < data->fieldCount; i++) {
             if(find_field_index(db, data->fields[i]) < 0) {
+                log_debug("GET_ALL: unknown field '%s'", data->fields[i]);
                 result->code    = -EX_INVALID_FIELD;
                 result->message = EXECUTION_ERROR_MESSAGES[EX_INVALID_FIELD];
                 return result;
@@ -551,6 +616,7 @@ static CommandResult* execute_get_all(GetAllData* data) {
         }
     }
 
+    log_debug("GET_ALL: formatting %d row(s) as table", db->rowsCount);
     // Format all rows as a table
     char* table = format_rows_as_table(db, data->fields, data->fieldCount);
     if(table == NULL) {
@@ -559,6 +625,7 @@ static CommandResult* execute_get_all(GetAllData* data) {
         return result;
     }
 
+    log_debug("GET_ALL: returning %d row(s) from '%s'", db->rowsCount, data->dbName);
     result->code    = db->rowsCount;
     result->message = NULL;
     result->data    = table;
@@ -569,6 +636,11 @@ static CommandResult* execute_get_all(GetAllData* data) {
  * Execute a SEARCH operation
  */
 static CommandResult* execute_search(SearchData* data) {
+    log_debug("SEARCH: db='%s' field='%s' returnFieldCount=%d",
+              data ? data->dbName : "(null)",
+              data ? data->fieldName : "(null)",
+              data ? data->fieldCount : 0);
+
     CommandResult* result = (CommandResult*)malloc(sizeof(CommandResult));
     if(result == NULL) {
         return NULL;
@@ -583,6 +655,7 @@ static CommandResult* execute_search(SearchData* data) {
 
     DB* db = find_db(data->dbName);
     if(db == NULL) {
+        log_debug("SEARCH: db '%s' not found", data->dbName);
         result->code    = -1;
         result->message = EXECUTION_ERROR_MESSAGES[EX_DB_NOT_FOUND];
         return result;
@@ -591,15 +664,20 @@ static CommandResult* execute_search(SearchData* data) {
     // Find the search field index
     int searchFieldIdx = find_field_index(db, data->fieldName);
     if(searchFieldIdx < 0) {
+        log_debug("SEARCH: field '%s' not found in '%s'", data->fieldName, data->dbName);
         result->code    = -1;
         result->message = EXECUTION_ERROR_MESSAGES[EX_INVALID_FIELD];
         return result;
     }
 
+    log_debug("SEARCH: field '%s' is at index %d", data->fieldName, searchFieldIdx);
+
     // Validate return field names if specific fields are requested
     if(data->returnFields != NULL && data->fieldCount > 0) {
+        log_debug("SEARCH: validating %d return field name(s)", data->fieldCount);
         for(int i = 0; i < data->fieldCount; i++) {
             if(find_field_index(db, data->returnFields[i]) < 0) {
+                log_debug("SEARCH: unknown return field '%s'", data->returnFields[i]);
                 result->code    = -1;
                 result->message = EXECUTION_ERROR_MESSAGES[EX_INVALID_FIELD];
                 return result;
@@ -612,6 +690,10 @@ static CommandResult* execute_search(SearchData* data) {
 
     Row** matchingRows = NULL;
     int   hasIndex     = db_has_index(db, searchFieldIdx);
+
+    log_debug("SEARCH: using %s for field '%s'",
+              hasIndex == 1 ? "index" : "full scan",
+              data->fieldName);
 
     if(hasIndex == 1) {
         int indexResult = db_index_collect_rows(db,
@@ -626,6 +708,8 @@ static CommandResult* execute_search(SearchData* data) {
             return result;
         }
         if(indexResult != 0) {
+            log_debug("SEARCH: index lookup failed (rc=%d), falling back to scan",
+                      indexResult);
             hasIndex = 0;
         }
     }
@@ -649,6 +733,8 @@ static CommandResult* execute_search(SearchData* data) {
             row = db_iter_next(db, &it);
         }
     }
+
+    log_debug("SEARCH: found %d match(es) in '%s'", matchCount, data->dbName);
 
     // Format the matching rows as a table
     char* table = format_search_results(db,
@@ -674,6 +760,8 @@ static CommandResult* execute_search(SearchData* data) {
  * Execute a COUNT operation
  */
 static CommandResult* execute_count(CountData* data) {
+    log_debug("COUNT: db='%s'", data ? data->dbName : "(null)");
+
     CommandResult* result = (CommandResult*)malloc(sizeof(CommandResult));
     if(result == NULL) {
         return NULL;
@@ -688,11 +776,13 @@ static CommandResult* execute_count(CountData* data) {
 
     DB* db = find_db(data->dbName);
     if(db == NULL) {
+        log_debug("COUNT: db '%s' not found", data->dbName);
         result->code    = -1;
         result->message = EXECUTION_ERROR_MESSAGES[EX_DB_NOT_FOUND];
         return result;
     }
 
+    log_debug("COUNT: '%s' has %d row(s)", data->dbName, db->rowsCount);
     result->code    = db->rowsCount;
     result->message = NULL;
     return result;
@@ -702,6 +792,10 @@ static CommandResult* execute_count(CountData* data) {
  * Execute a CREATE_INDEX operation
  */
 static CommandResult* execute_create_index(CreateIndexData* data) {
+    log_debug("CREATE_INDEX: db='%s' field='%s'",
+              data ? data->dbName : "(null)",
+              data ? data->fieldName : "(null)");
+
     CommandResult* result = (CommandResult*)malloc(sizeof(CommandResult));
     if(result == NULL) {
         return NULL;
@@ -716,6 +810,7 @@ static CommandResult* execute_create_index(CreateIndexData* data) {
 
     DB* db = find_db(data->dbName);
     if(db == NULL) {
+        log_debug("CREATE_INDEX: db '%s' not found", data->dbName);
         result->code    = -1;
         result->message = EXECUTION_ERROR_MESSAGES[EX_DB_NOT_FOUND];
         return result;
@@ -723,15 +818,20 @@ static CommandResult* execute_create_index(CreateIndexData* data) {
 
     int fieldIdx = find_field_index(db, data->fieldName);
     if(fieldIdx < 0) {
+        log_debug("CREATE_INDEX: field '%s' not found in '%s'",
+                  data->fieldName, data->dbName);
         result->code    = -1;
         result->message = EXECUTION_ERROR_MESSAGES[EX_INVALID_FIELD];
         return result;
     }
 
+    log_debug("CREATE_INDEX: building index on field '%s' (idx=%d) in '%s'",
+              data->fieldName, fieldIdx, data->dbName);
     int createResult = db_create_index(db, fieldIdx);
     if(createResult != 0) {
         result->code = createResult;
         if(createResult == -2) {
+            log_debug("CREATE_INDEX: index already exists for '%s'", data->fieldName);
             result->message = EXECUTION_ERROR_MESSAGES[EX_INDEX_ALREADY_EXISTS];
         } else if(createResult == -3) {
             result->message =
@@ -742,6 +842,8 @@ static CommandResult* execute_create_index(CreateIndexData* data) {
         return result;
     }
 
+    log_debug("CREATE_INDEX: index on '%s' built successfully (fieldIdx=%d)",
+              data->fieldName, fieldIdx);
     result->code    = fieldIdx;
     result->message = NULL;
     return result;
@@ -766,8 +868,7 @@ static int validate_value_types(DB* db, Data* values, int valueCount) {
             case TYPE_INT:
                 // Parser sets size = -2 for integers
                 if(val->size != -2) {
-                    fprintf(stderr,
-                            "Type mismatch at field '%s': expected int\n",
+                    log_warn("Type mismatch at field '%s': expected int",
                             db->fields[fieldIdx].name);
                     return -1;
                 }
@@ -776,8 +877,7 @@ static int validate_value_types(DB* db, Data* values, int valueCount) {
             case TYPE_DOUBLE:
                 // Parser sets size = -1 for doubles
                 if(val->size != -1) {
-                    fprintf(stderr,
-                            "Type mismatch at field '%s': expected double\n",
+                    log_warn("Type mismatch at field '%s': expected double",
                             db->fields[fieldIdx].name);
                     return -1;
                 }
@@ -786,8 +886,7 @@ static int validate_value_types(DB* db, Data* values, int valueCount) {
             case TYPE_BOOL:
                 // Parser sets size = -3 for booleans
                 if(val->size != -3) {
-                    fprintf(stderr,
-                            "Type mismatch at field '%s': expected bool\n",
+                    log_warn("Type mismatch at field '%s': expected bool",
                             db->fields[fieldIdx].name);
                     return -1;
                 }
@@ -797,16 +896,14 @@ static int validate_value_types(DB* db, Data* values, int valueCount) {
                 // For strings, size >= 0 is the string length
                 // and value.s should not be NULL (can be empty string)
                 if(val->size < 0) {
-                    fprintf(stderr,
-                            "Type mismatch at field '%s': expected string\n",
+                    log_warn("Type mismatch at field '%s': expected string",
                             db->fields[fieldIdx].name);
                     return -1;
                 }
                 break;
 
             default:
-                fprintf(stderr,
-                        "Unknown field type at '%s'\n",
+                log_warn("Unknown field type at '%s'",
                         db->fields[fieldIdx].name);
                 return -1;
         }

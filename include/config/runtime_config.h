@@ -1,6 +1,8 @@
 #ifndef CONFIG_RUNTIME_CONFIG_H
 #define CONFIG_RUNTIME_CONFIG_H
 
+#include "utils/log.h"
+
 #define DEFAULT_AUTOSAVE_INTERVAL_MS 30000LL
 #define DEFAULT_SNAPSHOT_PATH        "poudb.snapshot"
 #define RUNTIME_CONFIG_PATH_MAX      512
@@ -11,6 +13,7 @@ typedef struct {
     long long autosaveIntervalMs;
     int       autosaveEnabled;
     char      snapshotPath[RUNTIME_CONFIG_PATH_MAX];
+    LogLevel  logLevel;
 } RuntimeConfig;
 
 /**

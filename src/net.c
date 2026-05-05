@@ -7,6 +7,8 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include "utils/log.h"
+
 #define INITIAL_RECIEVE_BUFFER_SIZE 1024
 #define MAX_RECIEVE_SIZE            65536
 
@@ -25,14 +27,14 @@ int create_server(int port, int backlog) {
 
     serverfd = socket(AF_INET, SOCK_STREAM, 0);
     if(serverfd == -1) {
-        perror("socket");
+        log_errno("socket");
         return -1;
     }
 
     // Set SO_REUSEADDR option to allow immediate reuse of the address
     if(setsockopt(serverfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) ==
        -1) {
-        perror("setsockopt");
+        log_errno("setsockopt");
         close(serverfd);
         return -1;
     }
@@ -45,14 +47,14 @@ int create_server(int port, int backlog) {
     res =
         bind(serverfd, (struct sockaddr*)&address, sizeof(struct sockaddr_in));
     if(res == -1) {
-        perror("bind");
+        log_errno("bind");
         close(serverfd);
         return -1;
     }
 
     res = listen(serverfd, backlog);
     if(res == -1) {
-        perror("listen");
+        log_errno("listen");
         close(serverfd);
         return -1;
     }
@@ -71,7 +73,7 @@ int accept_connection(int serverfd) {
     len      = sizeof(struct sockaddr_in);
     clientfd = accept(serverfd, (struct sockaddr*)&clientAddress, &len);
     if(clientfd == -1) {
-        perror("accept");
+        log_errno("accept");
     }
 
     return clientfd;
@@ -94,13 +96,13 @@ char* receive_data(int clientfd) {
             // Grow buffer (double strategy)
             size_t new_size = total_size * 2;
             if(new_size > MAX_RECIEVE_SIZE) {
-                fprintf(stderr, "Request too large\n");
+                log_warn("Request too large");
                 free(buffer);
                 return NULL;
             }
             char* new_buffer = realloc(buffer, new_size);
             if(!new_buffer) {
-                perror("realloc");
+                log_errno("realloc");
                 free(buffer);
                 return NULL;
             }
@@ -146,7 +148,7 @@ ssize_t send_data(int clientfd, const char* data, size_t len) {
         result = write(clientfd, data + bytes_sent, len - bytes_sent);
 
         if(result <= 0) {
-            perror("write");
+            log_errno("write");
             return -1;
         }
 

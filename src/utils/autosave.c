@@ -1,9 +1,9 @@
 #include "utils/autosave.h"
 
-#include <stdio.h>
 #include <time.h>
 
 #include "db/persistence.h"
+#include "utils/log.h"
 
 static long long monotonic_time_ms(void) {
     struct timespec ts;
@@ -38,8 +38,7 @@ void autosave_maybe_run(AutosaveState* state, const char* snapshotPath) {
 
     long long nowMs = monotonic_time_ms();
     if(nowMs == -1) {
-        fprintf(stderr,
-                "Failed to read monotonic autosave timer; autosave disabled\n");
+        log_warn("Failed to read monotonic autosave timer; autosave disabled");
         state->enabled = 0;
         return;
     }
@@ -49,7 +48,7 @@ void autosave_maybe_run(AutosaveState* state, const char* snapshotPath) {
     }
 
     if(persistence_save_all(snapshotPath) != 0) {
-        fprintf(stderr, "Failed to save periodic snapshot\n");
+        log_warn("Failed to save periodic snapshot");
     }
 
     state->lastSaveMs = nowMs;

@@ -15,6 +15,7 @@
 #include "db/persistence.h"
 #include "net.h"
 #include "utils/autosave.h"
+#include "utils/log.h"
 #include "utils/stdin.h"
 
 static char g_snapshotPath[RUNTIME_CONFIG_PATH_MAX] = {0};
@@ -26,7 +27,7 @@ static void cleanup_handler(void) {
     const char* snapshotPath = (g_snapshotPath[0] != '\0') ? g_snapshotPath : NULL;
 
     if(persistence_save_all(snapshotPath) != 0) {
-        fprintf(stderr, "Failed to save snapshot on shutdown\n");
+        log_error("Failed to save snapshot on shutdown");
     }
     free_db_storage();
 }
@@ -42,7 +43,7 @@ int main(int argc, char* argv[]) {
     EpollEvent*       events;
 
     if(sodium_init() < 0) {
-        fprintf(stderr, "Failed to initialize libsodium\n");
+        log_error("Failed to initialize libsodium");
         return EXIT_FAILURE;
     }
 
@@ -53,6 +54,9 @@ int main(int argc, char* argv[]) {
     if(res != 0) {
         return EXIT_FAILURE;
     }
+
+    log_set_level(config.logLevel);
+    log_info("Log level: %s", log_level_to_string(config.logLevel));
 
     strncpy(g_snapshotPath, config.snapshotPath, sizeof(g_snapshotPath));
     g_snapshotPath[sizeof(g_snapshotPath) - 1] = '\0';
@@ -67,7 +71,7 @@ int main(int argc, char* argv[]) {
     auth_store_init(&g_auth_store);
     init_db_storage();
     if(persistence_load_all(config.snapshotPath) != 0) {
-        fprintf(stderr, "Failed to load snapshot, starting with empty state\n");
+        log_warn("Failed to load snapshot, starting with empty state");
     }
 
     /* Bootstrap: generate an admin key when no keys exist yet. */
@@ -75,14 +79,14 @@ int main(int argc, char* argv[]) {
         char token[AUTH_TOKEN_BUF_SIZE];
         if(auth_generate_token(token) == 0 &&
            auth_add_key(&g_auth_store, "admin", token, ROLE_ADMIN) == 0) {
-            printf("[AUTH] First-run admin key: %s\n", token);
-            puts("[AUTH] Store it securely - it will not be shown again.");
+            log_info("[AUTH] First-run admin key: %s", token);
+            log_info("[AUTH] Store it securely - it will not be shown again.");
             /* Persist immediately so the hash survives a restart. */
             if(persistence_save_all(config.snapshotPath) != 0) {
-                fprintf(stderr, "Warning: failed to persist initial admin key\n");
+                log_warn("Failed to persist initial admin key");
             }
         } else {
-            fprintf(stderr, "Failed to generate initial admin key\n");
+            log_error("Failed to generate initial admin key");
         }
         sodium_memzero(token, sizeof(token));
     }
@@ -90,8 +94,7 @@ int main(int argc, char* argv[]) {
     autosaveState.enabled = 0;
     if(config.autosaveEnabled) {
         if(autosave_init(&autosaveState, config.autosaveIntervalMs) != 0) {
-            fprintf(stderr,
-                    "Failed to initialize monotonic autosave timer; autosave disabled\n");
+            log_warn("Failed to initialize monotonic autosave timer; autosave disabled");
         }
     }
 
@@ -103,8 +106,8 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
     serverfd = res;
-    printf("running on port %d\n", config.port);
-    puts("Type Q at anytime to exit");
+    log_info("Running on port %d", config.port);
+    log_info("Type Q at any time to exit");
 
     if(init_connection_manager(&cm, config.maxConnections) == -1) {
         free(events);

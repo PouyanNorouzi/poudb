@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "utils/hashmap.h"
+#include "utils/log.h"
 
 /**
  * Node structure for the database linked list
@@ -78,14 +79,14 @@ int add_db(DB* db) {
 
     // Check if database with same name already exists
     if(find_db(db->name) != NULL) {
-        fprintf(stderr, "Database '%s' already exists\n", db->name);
+        log_warn("Database '%s' already exists", db->name);
         return -2;
     }
 
     // Create new node
     DBNode* node = (DBNode*)malloc(sizeof(DBNode));
     if(node == NULL) {
-        perror("malloc");
+        log_errno("malloc");
         return -3;
     }
 
@@ -171,7 +172,7 @@ DB* db_create(const char* name, Field* fields, int fieldsCount) {
 
     DB* db = (DB*)malloc(sizeof(DB));
     if(db == NULL) {
-        perror("malloc");
+        log_errno("malloc");
         return NULL;
     }
 
@@ -183,7 +184,7 @@ DB* db_create(const char* name, Field* fields, int fieldsCount) {
     int totalFields = fieldsCount + 1;
     db->fields      = (Field*)malloc(sizeof(Field) * totalFields);
     if(db->fields == NULL) {
-        perror("malloc");
+        log_errno("malloc");
         free(db);
         return NULL;
     }
@@ -200,7 +201,7 @@ DB* db_create(const char* name, Field* fields, int fieldsCount) {
     // Initialize row hashmap buckets
     db->rowMap = row_hashmap_create(INITIAL_ROW_CAPACITY);
     if(db->rowMap == NULL) {
-        perror("malloc");
+        log_errno("malloc");
         free(db->fields);
         free(db);
         return NULL;
@@ -212,7 +213,7 @@ DB* db_create(const char* name, Field* fields, int fieldsCount) {
     db->indexes =
         (DBFieldIndex*)calloc((size_t)db->fieldsCount, sizeof(DBFieldIndex));
     if(db->indexes == NULL) {
-        perror("calloc");
+        log_errno("calloc");
         row_hashmap_destroy(db->rowMap, free_row_cb, db);
         free(db->fields);
         free(db);
@@ -255,8 +256,7 @@ int db_add_row(DB* db, int key, Data* values, int valueCount) {
 
     // valueCount should match fieldsCount - 1 (excluding key field)
     if(valueCount != db->fieldsCount - 1) {
-        fprintf(stderr,
-                "Value count (%d) doesn't match fields count (%d)\n",
+        log_warn("Value count (%d) doesn't match fields count (%d)",
                 valueCount,
                 db->fieldsCount - 1);
         return -2;
@@ -264,9 +264,7 @@ int db_add_row(DB* db, int key, Data* values, int valueCount) {
 
     // Check if we've reached max capacity
     if(db->rowsCount >= MAX_ROW_CAPACITY) {
-        fprintf(stderr,
-                "Maximum row capacity (%d) reached\n",
-                MAX_ROW_CAPACITY);
+        log_warn("Maximum row capacity (%d) reached", MAX_ROW_CAPACITY);
         return -3;
     }
 
@@ -286,7 +284,7 @@ int db_add_row(DB* db, int key, Data* values, int valueCount) {
 
     // Enforce unique keys in hashmap storage
     if(find_row(db, actualKey) != NULL) {
-        fprintf(stderr, "Key '%d' already exists\n", actualKey);
+        log_warn("Key '%d' already exists", actualKey);
         return -5;
     }
 
@@ -294,7 +292,7 @@ int db_add_row(DB* db, int key, Data* values, int valueCount) {
     int   totalValues = db->fieldsCount;
     Data* rowValues   = (Data*)malloc(sizeof(Data) * totalValues);
     if(rowValues == NULL) {
-        perror("malloc");
+        log_errno("malloc");
         return -4;
     }
 
@@ -323,7 +321,7 @@ int db_add_row(DB* db, int key, Data* values, int valueCount) {
     if(rebuild_enabled_indexes(db) != 0) {
         // Keep row insertion successful even if index rebuild fails.
         // Failing indexes are disabled by rebuild_enabled_indexes.
-        fprintf(stderr, "Warning: failed to rebuild indexes after ADD\n");
+        log_warn("Failed to rebuild indexes after ADD");
     }
 
     return 0;
@@ -343,7 +341,7 @@ Row* db_get_row(DB* db, int key) {
     // Allocate the new row structure
     Row* newRow = (Row*)malloc(sizeof(Row));
     if(newRow == NULL) {
-        perror("malloc");
+        log_errno("malloc");
         return NULL;
     }
 
@@ -352,7 +350,7 @@ Row* db_get_row(DB* db, int key) {
     // Allocate the values array
     newRow->values = (Data*)malloc(sizeof(Data) * newRow->valueCount);
     if(newRow->values == NULL) {
-        perror("malloc");
+        log_errno("malloc");
         free(newRow);
         return NULL;
     }
@@ -367,7 +365,7 @@ Row* db_get_row(DB* db, int key) {
             if(srcStr != NULL) {
                 char* newStr = (char*)malloc(strlen(srcStr) + 1);
                 if(newStr == NULL) {
-                    perror("malloc");
+                    log_errno("malloc");
                     // Free already copied strings
                     for(int j = 0; j < i; j++) {
                         if(db->fields[j].type == TYPE_STRING &&
@@ -404,8 +402,7 @@ int db_update_row(DB*   db,
 
     // valueCount should match fieldsCount - 1 (excluding key field)
     if(valueCount != db->fieldsCount - 1) {
-        fprintf(stderr,
-                "Value count (%d) doesn't match fields count (%d)\n",
+        log_warn("Value count (%d) doesn't match fields count (%d)",
                 valueCount,
                 db->fieldsCount - 1);
         return -2;
@@ -438,7 +435,7 @@ int db_update_row(DB*   db,
             if(srcStr != NULL) {
                 char* newStr = (char*)malloc(strlen(srcStr) + 1);
                 if(newStr == NULL) {
-                    perror("malloc");
+                    log_errno("malloc");
                     return -4;
                 }
                 strcpy(newStr, srcStr);
@@ -457,7 +454,7 @@ int db_update_row(DB*   db,
     if(rebuild_enabled_indexes(db) != 0) {
         // Row update succeeded; index rebuild failures are downgraded to
         // warning and affected indexes are disabled.
-        fprintf(stderr, "Warning: failed to rebuild indexes after UP\n");
+        log_warn("Failed to rebuild indexes after UP");
     }
 
     return 0;
@@ -477,7 +474,7 @@ int db_delete_row(DB* db, int key) {
     db->rowsCount--;
 
     if(rebuild_enabled_indexes(db) != 0) {
-        fprintf(stderr, "Warning: failed to rebuild indexes after DEL\n");
+        log_warn("Failed to rebuild indexes after DEL");
     }
 
     return 0;

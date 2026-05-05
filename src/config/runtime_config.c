@@ -9,6 +9,7 @@
 
 #include "main.h"
 #include "net.h"
+#include "utils/log.h"
 #include "utils/parse.h"
 
 typedef struct {
@@ -35,6 +36,7 @@ int runtime_config_init(RuntimeConfig* cfg, int argc, char* argv[]) {
     cfg->maxConnections     = DEFAULT_MAX_CONNECTIONS;
     cfg->autosaveIntervalMs = DEFAULT_AUTOSAVE_INTERVAL_MS;
     cfg->autosaveEnabled    = 1;
+    cfg->logLevel           = LOG_INFO;
     util_copy_string(cfg->snapshotPath,
                      sizeof(cfg->snapshotPath),
                      DEFAULT_SNAPSHOT_PATH);
@@ -65,6 +67,7 @@ void runtime_config_print_usage(const char* programName) {
     printf("  -i, --autosave-interval MS    Autosave interval in milliseconds\n");
     printf("  -m, --max-connections N       Maximum simultaneous clients\n");
     printf("  -a, --autosave on|off         Enable/disable autosave\n");
+    printf("  -l, --log-level LEVEL         Log verbosity: debug/info/warn/error/silent\n");
     printf("\n");
     printf("Precedence: CLI > config file > built-in defaults\n");
 }
@@ -83,13 +86,13 @@ static int pre_scan_config_path(int argc, char* argv[], char* outPath, size_t ou
 
         if(strcmp(arg, "-f") == 0 || strcmp(arg, "--config") == 0) {
             if(i + 1 >= argc) {
-                fprintf(stderr, "Missing value for %s\n", arg);
+                log_error("Missing value for %s", arg);
                 return -1;
             }
 
             if(util_copy_string(outPath, outSize, argv[i + 1]) != 0 ||
                outPath[0] == '\0') {
-                fprintf(stderr, "Invalid config path\n");
+                log_error("Invalid config path");
                 return -1;
             }
             i++;
@@ -100,7 +103,7 @@ static int pre_scan_config_path(int argc, char* argv[], char* outPath, size_t ou
             const char* value = arg + 9;
             if(util_copy_string(outPath, outSize, value) != 0 ||
                outPath[0] == '\0') {
-                fprintf(stderr, "Invalid config path\n");
+                log_error("Invalid config path");
                 return -1;
             }
         }
@@ -122,12 +125,12 @@ static int load_config_file(RuntimeConfig* cfg, const char* configPath) {
 
     parseRc = ini_parse(configPath, config_ini_handler, &ctx);
     if(parseRc < 0) {
-        fprintf(stderr, "Failed to read config file: %s\n", configPath);
+        log_error("Failed to read config file: %s", configPath);
         return -1;
     }
 
     if(parseRc > 0) {
-        fprintf(stderr, "Config parse error at line %d in %s\n", parseRc, configPath);
+        log_error("Config parse error at line %d in %s", parseRc, configPath);
         return -1;
     }
 
@@ -155,7 +158,7 @@ static int config_ini_handler(void*       user,
 
     if(strcmp(section, "server") == 0 && strcmp(name, "port") == 0) {
         if(util_parse_int_in_range(value, 1, 65535, &parsedInt) != 0) {
-            fprintf(stderr, "Invalid config value server.port: %s\n", value);
+            log_error("Invalid config value server.port: %s", value);
             ctx->error = 1;
         } else {
             cfg->port = parsedInt;
@@ -165,7 +168,7 @@ static int config_ini_handler(void*       user,
 
     if(strcmp(section, "server") == 0 && strcmp(name, "max_connections") == 0) {
         if(util_parse_int_in_range(value, 1, INT_MAX, &parsedInt) != 0) {
-            fprintf(stderr, "Invalid config value server.max_connections: %s\n", value);
+            log_error("Invalid config value server.max_connections: %s", value);
             ctx->error = 1;
         } else {
             cfg->maxConnections = parsedInt;
@@ -178,7 +181,7 @@ static int config_ini_handler(void*       user,
                             sizeof(cfg->snapshotPath),
                             value) != 0 ||
            cfg->snapshotPath[0] == '\0') {
-            fprintf(stderr, "Invalid config value storage.snapshot_path\n");
+            log_error("Invalid config value storage.snapshot_path");
             ctx->error = 1;
         }
         return 1;
@@ -186,7 +189,7 @@ static int config_ini_handler(void*       user,
 
     if(strcmp(section, "autosave") == 0 && strcmp(name, "enabled") == 0) {
         if(util_parse_bool(value, &parsedInt) != 0) {
-            fprintf(stderr, "Invalid config value autosave.enabled: %s\n", value);
+            log_error("Invalid config value autosave.enabled: %s", value);
             ctx->error = 1;
         } else {
             cfg->autosaveEnabled = parsedInt;
@@ -196,7 +199,7 @@ static int config_ini_handler(void*       user,
 
     if(strcmp(section, "autosave") == 0 && strcmp(name, "interval_ms") == 0) {
         if(util_parse_positive_ll(value, &parsedLong) != 0) {
-            fprintf(stderr, "Invalid config value autosave.interval_ms: %s\n", value);
+            log_error("Invalid config value autosave.interval_ms: %s", value);
             ctx->error = 1;
         } else {
             cfg->autosaveIntervalMs = parsedLong;
@@ -204,7 +207,12 @@ static int config_ini_handler(void*       user,
         return 1;
     }
 
-    fprintf(stderr, "Ignoring unknown config key %s.%s\n", section, name);
+    if(strcmp(section, "logging") == 0 && strcmp(name, "level") == 0) {
+        cfg->logLevel = log_level_from_string(value);
+        return 1;
+    }
+
+    log_warn("Ignoring unknown config key %s.%s", section, name);
     return 1;
 }
 
@@ -222,6 +230,7 @@ static int apply_cli_overrides(RuntimeConfig* cfg, int argc, char* argv[]) {
         {"autosave-interval", required_argument, NULL, 'i'},
         {"max-connections", required_argument, NULL, 'm'},
         {"autosave", required_argument, NULL, 'a'},
+        {"log-level", required_argument, NULL, 'l'},
         {0, 0, 0, 0}};
 
     if(cfg == NULL) {
@@ -229,7 +238,7 @@ static int apply_cli_overrides(RuntimeConfig* cfg, int argc, char* argv[]) {
     }
 
     optind = 1;
-    while((option = getopt_long(argc, argv, "hf:p:s:i:m:a:", longOptions, NULL)) != -1) {
+    while((option = getopt_long(argc, argv, "hf:p:s:i:m:a:l:", longOptions, NULL)) != -1) {
         switch(option) {
             case 'h':
                 runtime_config_print_usage(argv[0]);
@@ -239,7 +248,7 @@ static int apply_cli_overrides(RuntimeConfig* cfg, int argc, char* argv[]) {
                 break;
             case 'p':
                 if(util_parse_int_in_range(optarg, 1, 65535, &parsedInt) != 0) {
-                    fprintf(stderr, "Invalid --port value: %s\n", optarg);
+                    log_error("Invalid --port value: %s", optarg);
                     return -1;
                 }
                 cfg->port = parsedInt;
@@ -249,30 +258,33 @@ static int apply_cli_overrides(RuntimeConfig* cfg, int argc, char* argv[]) {
                                     sizeof(cfg->snapshotPath),
                                     optarg) != 0 ||
                    cfg->snapshotPath[0] == '\0') {
-                    fprintf(stderr, "Invalid --snapshot value\n");
+                    log_error("Invalid --snapshot value");
                     return -1;
                 }
                 break;
             case 'i':
                 if(util_parse_positive_ll(optarg, &parsedLong) != 0) {
-                    fprintf(stderr, "Invalid --autosave-interval value: %s\n", optarg);
+                    log_error("Invalid --autosave-interval value: %s", optarg);
                     return -1;
                 }
                 cfg->autosaveIntervalMs = parsedLong;
                 break;
             case 'm':
                 if(util_parse_int_in_range(optarg, 1, INT_MAX, &parsedInt) != 0) {
-                    fprintf(stderr, "Invalid --max-connections value: %s\n", optarg);
+                    log_error("Invalid --max-connections value: %s", optarg);
                     return -1;
                 }
                 cfg->maxConnections = parsedInt;
                 break;
             case 'a':
                 if(util_parse_bool(optarg, &parsedBool) != 0) {
-                    fprintf(stderr, "Invalid --autosave value: %s\n", optarg);
+                    log_error("Invalid --autosave value: %s", optarg);
                     return -1;
                 }
                 cfg->autosaveEnabled = parsedBool;
+                break;
+            case 'l':
+                cfg->logLevel = log_level_from_string(optarg);
                 break;
             default:
                 runtime_config_print_usage(argv[0]);
@@ -281,7 +293,7 @@ static int apply_cli_overrides(RuntimeConfig* cfg, int argc, char* argv[]) {
     }
 
     if(optind < argc) {
-        fprintf(stderr, "Unknown positional argument: %s\n", argv[optind]);
+        log_error("Unknown positional argument: %s", argv[optind]);
         return -1;
     }
 

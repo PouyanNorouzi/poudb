@@ -6,6 +6,7 @@
 #include <unistd.h>
 
 #include "auth.h"
+#include "utils/log.h"
 
 int init_connection_manager(ConnectionManager* cm, int maxClients) {
     if(cm == NULL || maxClients <= 0) {
@@ -19,7 +20,7 @@ int init_connection_manager(ConnectionManager* cm, int maxClients) {
     cm->client_auth  = (AuthLevel*)malloc((size_t)maxClients * sizeof(AuthLevel));
 
     if(cm->epollfd == -1) {
-        perror("epoll_create1");
+        log_errno("epoll_create1");
         return -1;
     }
 
@@ -45,14 +46,14 @@ int watch_fd(ConnectionManager* cm, int fd, uint32_t events) {
 
     int res = epoll_ctl(cm->epollfd, EPOLL_CTL_ADD, fd, &event);
     if(res == -1) {
-        perror("epoll_ctl: watch_fd");
+        log_errno("epoll_ctl: watch_fd");
     }
     return res;
 }
 
 int add_client(ConnectionManager* cm, int clientfd) {
     if(cm->client_count >= cm->max_clients) {
-        fprintf(stderr, "add_client: at capacity (%d)\n", cm->max_clients);
+        log_warn("add_client: at capacity (%d)", cm->max_clients);
         return -1;
     }
 
@@ -61,7 +62,7 @@ int add_client(ConnectionManager* cm, int clientfd) {
     event.events  = EPOLLIN;
 
     if(epoll_ctl(cm->epollfd, EPOLL_CTL_ADD, clientfd, &event) == -1) {
-        perror("epoll_ctl: add_client");
+        log_errno("epoll_ctl: add_client");
         return -1;
     }
 
@@ -89,7 +90,7 @@ int remove_client(ConnectionManager* cm, int clientfd) {
         }
     }
 
-    fprintf(stderr, "remove_client: fd %d not found\n", clientfd);
+    log_warn("remove_client: fd %d not found", clientfd);
     return -1;
 }
 
@@ -108,7 +109,7 @@ int wait_for_events(ConnectionManager* cm,
                     int                timeout) {
     int nfds = epoll_wait(cm->epollfd, events, maxevents, timeout);
     if(nfds == -1) {
-        perror("epoll_wait");
+        log_errno("epoll_wait");
     }
     return nfds;
 }

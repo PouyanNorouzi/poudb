@@ -8,3 +8,12 @@ snapshot_path=/var/lib/poudb/poudb.snapshot
 [autosave]
 enabled=true
 interval_ms=30000
+
+[logging]
+# Log verbosity level. Valid values: silent, error, warn, info, debug
+# silent - no output at all
+# error  - only critical failures
+# warn   - errors + warnings (e.g. capacity limits, snapshot failures)
+# info   - warn + server lifecycle messages (default)
+# debug  - info + per-row ADD/UP/DEL traces
+level=info
