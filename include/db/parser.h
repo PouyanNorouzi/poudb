@@ -1,6 +1,7 @@
 #ifndef PARSER_H
 #define PARSER_H
 
+#include "auth.h"
 #include "data_model.h"
 
 #define MAX_ERROR_LENGTH 128
@@ -18,6 +19,10 @@ typedef enum {
     OP_SEARCH,       /* Search records with criteria */
     OP_COUNT,        /* Count records in database */
     OP_CREATE_INDEX, /* Create an index on database */
+    OP_AUTH,         /* Authenticate with a token */
+    OP_ADD_KEY,      /* Add an auth key (admin only) */
+    OP_DEL_KEY,      /* Delete an auth key (admin only) */
+    OP_LIST_KEYS,    /* List auth keys (admin only) */
     OP_ERROR         /* When an error has occured when parsing */
 } Operation;
 
@@ -31,6 +36,9 @@ typedef enum {
     ER_INVALID_SEARCH_FORMAT, /* Invalid format for SEARCH command */
     ER_INVALID_COUNT_FORMAT,  /* Invalid format for COUNT command */
     ER_INVALID_INDEX_FORMAT,  /* Invalid format for CREATE INDEX command */
+    ER_INVALID_AUTH_FORMAT,   /* Invalid format for AUTH command */
+    ER_INVALID_ADD_KEY_FORMAT, /* Invalid format for ADD_KEY command */
+    ER_INVALID_DEL_KEY_FORMAT, /* Invalid format for DEL_KEY command */
     ER_MISSING_ARGUMENT,      /* Required argument is missing */
     ER_UNEXPECTED_ARGUMENT,   /* Unexpected extra argument provided */
     ER_INVALID_IDENTIFIER,    /* Invalid identifier name (db, table, field) */
@@ -134,6 +142,31 @@ typedef struct {
 } CreateIndexData;
 
 /**
+ * Data structure for OP_AUTH operation
+ * AUTH <token>
+ */
+typedef struct {
+    char token[AUTH_TOKEN_BUF_SIZE]; /* Token to authenticate with */
+} AuthData;
+
+/**
+ * Data structure for OP_ADD_KEY operation
+ * ADD_KEY <name> admin|readonly
+ */
+typedef struct {
+    char    name[AUTH_KEY_NAME_MAX]; /* Name label for this key */
+    KeyRole role;                    /* ROLE_ADMIN or ROLE_READONLY */
+} AddKeyData;
+
+/**
+ * Data structure for OP_DEL_KEY operation
+ * DEL_KEY <name>
+ */
+typedef struct {
+    char name[AUTH_KEY_NAME_MAX]; /* Name of the key to delete */
+} DelKeyData;
+
+/**
  * Command structure representing a parsed command
  */
 typedef struct {
@@ -148,6 +181,9 @@ typedef struct {
         SearchData      search;
         CountData       count;
         CreateIndexData create_index;
+        AuthData        auth;
+        AddKeyData      add_key;
+        DelKeyData      del_key;
         char            error[MAX_ERROR_LENGTH];
     } data; /* Operation-specific data */
 } Command;

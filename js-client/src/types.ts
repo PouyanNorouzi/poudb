@@ -1,4 +1,5 @@
 export type SchemaType = "int" | "double" | "bool" | "string";
+export type KeyRole = "admin" | "readonly";
 
 export interface SchemaField {
     name: string;
@@ -46,6 +47,8 @@ export interface ClientOptions {
     timeoutMs?: number;
     settleTimeMs?: number;
     reconnect?: ReconnectOptions;
+    /** If set, automatically authenticates after connecting. */
+    key?: string;
 }
 
 export interface QueryResult<T = unknown> {

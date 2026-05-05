@@ -8,7 +8,9 @@
 #include <strings.h>
 #include <unistd.h>
 
-#define COMMAND_LENGTH  9
+#include "auth.h"
+
+#define COMMAND_LENGTH  13
 #define TYPE_STR_LENGTH 32
 
 /**
@@ -22,10 +24,14 @@ static const char* COMMAND_STRINGS[] = {"CREATE",
                                         "GET_ALL",
                                         "SEARCH",
                                         "COUNT",
-                                        "CREATE_INDEX"};
+                                        "CREATE_INDEX",
+                                        "AUTH",
+                                        "ADD_KEY",
+                                        "DEL_KEY",
+                                        "LIST_KEYS"};
 
 const char* ERROR_MESSAGES[] = {
-    "Command must be one of CREATE, ADD, UP, GET, DEL, GET_ALL, SEARCH, COUNT, CREATE_INDEX", /* ER_INVALID_COMMAND */
+    "Command must be one of CREATE, ADD, UP, GET, DEL, GET_ALL, SEARCH, COUNT, CREATE_INDEX, AUTH, ADD_KEY, DEL_KEY, LIST_KEYS", /* ER_INVALID_COMMAND */
     "Format must be CREATE <DB> (type field1, type field2, ...)", /* ER_INVALID_CREATE_FORMAT
                                                                    */
     "Format must be ADD <DB> <KEY> (value1, value2, ...)", /* ER_INVALID_ADD_FORMAT
@@ -39,6 +45,9 @@ const char* ERROR_MESSAGES[] = {
                                                                          */
     "Format must be COUNT <DB>",                /* ER_INVALID_COUNT_FORMAT */
     "Format must be CREATE_INDEX <DB> <FIELD>", /* ER_INVALID_INDEX_FORMAT */
+    "Format must be AUTH <token>",              /* ER_INVALID_AUTH_FORMAT */
+    "Format must be ADD_KEY <name> admin|readonly", /* ER_INVALID_ADD_KEY_FORMAT */
+    "Format must be DEL_KEY <name>",            /* ER_INVALID_DEL_KEY_FORMAT */
     "Missing required argument: %s",            /* ER_MISSING_ARGUMENT */
     "Unexpected argument: %s",                  /* ER_UNEXPECTED_ARGUMENT */
     "Invalid identifier '%s' (must follow naming rules)", /* ER_INVALID_IDENTIFIER
@@ -60,6 +69,10 @@ static Command* parse_get_all(const char* input);
 static Command* parse_search(const char* input);
 static Command* parse_count(const char* input);
 static Command* parse_create_index(const char* input);
+static Command* parse_auth(const char* input);
+static Command* parse_add_key(const char* input);
+static Command* parse_del_key(const char* input);
+static Command* parse_list_keys(void);
 static Command* parse_error(ParseError errorCode, const char* detail);
 
 static Operation determine_operation(const char* input);
@@ -131,6 +144,10 @@ Command* parse_command(const char* input) {
         case OP_SEARCH:       return parse_search(args);
         case OP_COUNT:        return parse_count(args);
         case OP_CREATE_INDEX: return parse_create_index(args);
+        case OP_AUTH:         return parse_auth(args);
+        case OP_ADD_KEY:      return parse_add_key(args);
+        case OP_DEL_KEY:      return parse_del_key(args);
+        case OP_LIST_KEYS:    return parse_list_keys();
         default:              return parse_error(ER_INVALID_COMMAND, NULL);
     }
 }
@@ -207,12 +224,164 @@ void free_command(Command* cmd, int strings_transferred) {
             break;
 
         default:
-            // OP_DEL, OP_COUNT, OP_CREATE_INDEX, OP_ERROR have no dynamic
-            // memory
+            // OP_DEL, OP_COUNT, OP_CREATE_INDEX, OP_AUTH, OP_DEL_KEY,
+            // OP_LIST_KEYS, OP_ERROR have no dynamic memory
             break;
     }
 
     free(cmd);
+}
+
+/**
+ * Parse an AUTH operation command
+ * AUTH <token>
+ */
+static Command* parse_auth(const char* input) {
+    Command* cmd = (Command*)malloc(sizeof(Command));
+    if(cmd == NULL) {
+        return parse_error(ER_OTHER, "Failed to allocate memory");
+    }
+
+    cmd->op = OP_AUTH;
+    memset(cmd->data.auth.token, 0, sizeof(cmd->data.auth.token));
+
+    const char* p = skip_whitespace(input);
+    if(*p == '\0') {
+        free(cmd);
+        return parse_error(ER_INVALID_AUTH_FORMAT, NULL);
+    }
+
+    /* Copy token, reject if too long */
+    size_t len = 0;
+    while(p[len] && p[len] != ' ' && p[len] != '\t' && p[len] != '\n') {
+        len++;
+    }
+    if(len == 0 || len >= AUTH_TOKEN_BUF_SIZE) {
+        free(cmd);
+        return parse_error(ER_INVALID_AUTH_FORMAT, NULL);
+    }
+
+    memcpy(cmd->data.auth.token, p, len);
+    cmd->data.auth.token[len] = '\0';
+
+    /* Reject trailing arguments */
+    if(*skip_whitespace(p + len) != '\0') {
+        free(cmd);
+        return parse_error(ER_INVALID_AUTH_FORMAT, NULL);
+    }
+
+    return cmd;
+}
+
+/**
+ * Parse an ADD_KEY operation command
+ * ADD_KEY <name> admin|readonly
+ */
+static Command* parse_add_key(const char* input) {
+    Command* cmd = (Command*)malloc(sizeof(Command));
+    if(cmd == NULL) {
+        return parse_error(ER_OTHER, "Failed to allocate memory");
+    }
+
+    cmd->op = OP_ADD_KEY;
+    memset(cmd->data.add_key.name, 0, sizeof(cmd->data.add_key.name));
+
+    const char* p = skip_whitespace(input);
+    if(*p == '\0') {
+        free(cmd);
+        return parse_error(ER_INVALID_ADD_KEY_FORMAT, NULL);
+    }
+
+    /* Parse key name */
+    size_t name_len = 0;
+    while(p[name_len] && p[name_len] != ' ' && p[name_len] != '\t') {
+        name_len++;
+    }
+    if(name_len == 0 || name_len >= AUTH_KEY_NAME_MAX) {
+        free(cmd);
+        return parse_error(ER_INVALID_ADD_KEY_FORMAT, NULL);
+    }
+    memcpy(cmd->data.add_key.name, p, name_len);
+    cmd->data.add_key.name[name_len] = '\0';
+
+    /* Parse role */
+    p = skip_whitespace(p + name_len);
+    if(*p == '\0') {
+        free(cmd);
+        return parse_error(ER_INVALID_ADD_KEY_FORMAT, NULL);
+    }
+
+    if(strncasecmp(p, "admin", 5) == 0 &&
+       (p[5] == '\0' || p[5] == ' ' || p[5] == '\t')) {
+        cmd->data.add_key.role = ROLE_ADMIN;
+        p += 5;
+    } else if(strncasecmp(p, "readonly", 8) == 0 &&
+              (p[8] == '\0' || p[8] == ' ' || p[8] == '\t')) {
+        cmd->data.add_key.role = ROLE_READONLY;
+        p += 8;
+    } else {
+        free(cmd);
+        return parse_error(ER_INVALID_ADD_KEY_FORMAT, NULL);
+    }
+
+    /* Reject trailing arguments */
+    if(*skip_whitespace(p) != '\0') {
+        free(cmd);
+        return parse_error(ER_INVALID_ADD_KEY_FORMAT, NULL);
+    }
+
+    return cmd;
+}
+
+/**
+ * Parse a DEL_KEY operation command
+ * DEL_KEY <name>
+ */
+static Command* parse_del_key(const char* input) {
+    Command* cmd = (Command*)malloc(sizeof(Command));
+    if(cmd == NULL) {
+        return parse_error(ER_OTHER, "Failed to allocate memory");
+    }
+
+    cmd->op = OP_DEL_KEY;
+    memset(cmd->data.del_key.name, 0, sizeof(cmd->data.del_key.name));
+
+    const char* p = skip_whitespace(input);
+    if(*p == '\0') {
+        free(cmd);
+        return parse_error(ER_INVALID_DEL_KEY_FORMAT, NULL);
+    }
+
+    size_t name_len = 0;
+    while(p[name_len] && p[name_len] != ' ' && p[name_len] != '\t') {
+        name_len++;
+    }
+    if(name_len == 0 || name_len >= AUTH_KEY_NAME_MAX) {
+        free(cmd);
+        return parse_error(ER_INVALID_DEL_KEY_FORMAT, NULL);
+    }
+    memcpy(cmd->data.del_key.name, p, name_len);
+    cmd->data.del_key.name[name_len] = '\0';
+
+    /* Reject trailing arguments */
+    if(*skip_whitespace(p + name_len) != '\0') {
+        free(cmd);
+        return parse_error(ER_INVALID_DEL_KEY_FORMAT, NULL);
+    }
+
+    return cmd;
+}
+
+/**
+ * Parse a LIST_KEYS operation command (no arguments)
+ */
+static Command* parse_list_keys(void) {
+    Command* cmd = (Command*)malloc(sizeof(Command));
+    if(cmd == NULL) {
+        return parse_error(ER_OTHER, "Failed to allocate memory");
+    }
+    cmd->op = OP_LIST_KEYS;
+    return cmd;
 }
 
 /**

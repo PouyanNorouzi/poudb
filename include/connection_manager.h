@@ -4,13 +4,16 @@
 #include <stdint.h>
 #include <sys/epoll.h>
 
+#include "auth.h"
+
 typedef struct epoll_event EpollEvent;
 
 typedef struct {
-    int epollfd;
-    int* clients;
-    int client_count;
-    int max_clients;
+    int        epollfd;
+    int*       clients;
+    AuthLevel* client_auth;
+    int        client_count;
+    int        max_clients;
 } ConnectionManager;
 
 /**
@@ -53,6 +56,17 @@ int wait_for_events(ConnectionManager* cm,
                     EpollEvent*        events,
                     int                maxevents,
                     int                timeout);
+
+/**
+ * Returns the auth level for the given client fd, or AUTH_NONE if not found.
+ */
+AuthLevel get_client_auth(const ConnectionManager* cm, int fd);
+
+/**
+ * Sets the auth level for the given client fd.
+ * Has no effect if the fd is not a tracked client.
+ */
+void set_client_auth(ConnectionManager* cm, int fd, AuthLevel level);
 
 /**
  * Closes all tracked client connections and resets the client array.

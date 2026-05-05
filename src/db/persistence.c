@@ -6,11 +6,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "auth.h"
 #include "db/data_model.h"
 
 #define SNAPSHOT_MAGIC       "PDBSNAP"
 #define SNAPSHOT_MAGIC_SIZE  7
-#define SNAPSHOT_VERSION     1U
+#define SNAPSHOT_VERSION     2U
 #define NULL_STRING_SENTINEL UINT32_MAX
 #define DEFAULT_SNAPSHOT     "poudb.snapshot"
 
@@ -112,6 +113,27 @@ int persistence_save_all(const char* snapshotPath) {
         return -1;
     }
 
+    /* Write auth section: key count then each key. */
+    if(write_u32(fp, (uint32_t)g_auth_store.count) != 0) {
+        fclose(fp);
+        remove(tmpPath);
+        return -1;
+    }
+    for(int i = 0; i < g_auth_store.count; i++) {
+        const AuthKey* k      = &g_auth_store.keys[i];
+        uint16_t       nlen   = (uint16_t)strlen(k->name);
+        uint8_t        role_b = (uint8_t)k->role;
+        if(write_u16(fp, nlen) != 0 ||
+           fwrite(k->name, 1, nlen, fp) != nlen ||
+           write_u8(fp, role_b) != 0 ||
+           fwrite(k->hash, 1, crypto_pwhash_STRBYTES, fp) !=
+               crypto_pwhash_STRBYTES) {
+            fclose(fp);
+            remove(tmpPath);
+            return -1;
+        }
+    }
+
     /* Ensure all buffered data is written to disk. */
     if(fflush(fp) != 0) {
         fclose(fp);
@@ -160,7 +182,8 @@ int persistence_load_all(const char* snapshotPath) {
     }
 
     uint32_t version;
-    if(read_u32(fp, &version) != 0 || version != SNAPSHOT_VERSION) {
+    if(read_u32(fp, &version) != 0 ||
+       (version != 1U && version != SNAPSHOT_VERSION)) {
         fclose(fp);
         return -1; /* Version mismatch; cannot load. */
     }
@@ -279,6 +302,53 @@ int persistence_load_all(const char* snapshotPath) {
         }
 
         free(fields);
+    }
+
+    /* Load auth section if present (version 2+). */
+    if(version >= 2U) {
+        auth_store_init(&g_auth_store);
+        uint32_t keyCount;
+        if(read_u32(fp, &keyCount) != 0 || keyCount > AUTH_MAX_KEYS) {
+            fclose(fp);
+            free_db_storage();
+            init_db_storage();
+            return -1;
+        }
+        for(uint32_t ki = 0; ki < keyCount; ki++) {
+            AuthKey k;
+            memset(&k, 0, sizeof(k));
+            uint16_t nlen;
+            if(read_u16(fp, &nlen) != 0 || nlen == 0 ||
+               nlen >= AUTH_KEY_NAME_MAX) {
+                fclose(fp);
+                free_db_storage();
+                init_db_storage();
+                return -1;
+            }
+            if(fread(k.name, 1, nlen, fp) != nlen) {
+                fclose(fp);
+                free_db_storage();
+                init_db_storage();
+                return -1;
+            }
+            k.name[nlen] = '\0';
+            uint8_t role_b;
+            if(read_u8(fp, &role_b) != 0) {
+                fclose(fp);
+                free_db_storage();
+                init_db_storage();
+                return -1;
+            }
+            k.role = (KeyRole)role_b;
+            if(fread(k.hash, 1, crypto_pwhash_STRBYTES, fp) !=
+               crypto_pwhash_STRBYTES) {
+                fclose(fp);
+                free_db_storage();
+                init_db_storage();
+                return -1;
+            }
+            g_auth_store.keys[g_auth_store.count++] = k;
+        }
     }
 
     /* Snapshot loaded successfully. */

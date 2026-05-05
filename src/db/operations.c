@@ -5,6 +5,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "auth.h"
 #include "db/data_model.h"
 
 /**
@@ -96,6 +97,9 @@ CommandResult* execute_command(Command* cmd) {
         case OP_COUNT:   return execute_count(&cmd->data.count);
         case OP_CREATE_INDEX:
             return execute_create_index(&cmd->data.create_index);
+        case OP_ADD_KEY:   return execute_add_key(&cmd->data.add_key);
+        case OP_DEL_KEY:   return execute_del_key(&cmd->data.del_key);
+        case OP_LIST_KEYS: return execute_list_keys();
         default:
             result = (CommandResult*)malloc(sizeof(CommandResult));
             if(result == NULL) {
@@ -116,6 +120,108 @@ void free_command_result(CommandResult* result) {
         free(result->data);
     }
     free(result);
+}
+
+/**
+ * Execute an ADD_KEY operation: generate a token, store its hash, return token.
+ */
+CommandResult* execute_add_key(const AddKeyData* data) {
+    CommandResult* result = (CommandResult*)malloc(sizeof(CommandResult));
+    if(result == NULL) {
+        return NULL;
+    }
+    result->data    = NULL;
+    result->message = NULL;
+
+    char* token = (char*)malloc(AUTH_TOKEN_BUF_SIZE);
+    if(token == NULL) {
+        result->code    = -1;
+        result->message = EXECUTION_ERROR_MESSAGES[EX_MEMORY_ALLOCATION_FAILED];
+        return result;
+    }
+
+    if(auth_generate_token(token) != 0) {
+        free(token);
+        result->code    = -1;
+        result->message = "Failed to generate token";
+        return result;
+    }
+
+    if(auth_add_key(&g_auth_store, data->name, token, data->role) != 0) {
+        free(token);
+        result->code    = -1;
+        result->message = "Failed to add key: store full or name already exists";
+        return result;
+    }
+
+    /* Return the raw token in data (shown to the caller exactly once) */
+    result->code = 1;
+    result->data = token;
+    return result;
+}
+
+/**
+ * Execute a DEL_KEY operation: remove a key from the auth store.
+ */
+CommandResult* execute_del_key(const DelKeyData* data) {
+    CommandResult* result = (CommandResult*)malloc(sizeof(CommandResult));
+    if(result == NULL) {
+        return NULL;
+    }
+    result->data    = NULL;
+    result->message = NULL;
+
+    if(auth_del_key(&g_auth_store, data->name) != 0) {
+        result->code    = -1;
+        result->message = "Key not found";
+        return result;
+    }
+
+    result->code = 1;
+    return result;
+}
+
+/**
+ * Execute a LIST_KEYS operation: return a table of {name, role}.
+ */
+CommandResult* execute_list_keys(void) {
+    CommandResult* result = (CommandResult*)malloc(sizeof(CommandResult));
+    if(result == NULL) {
+        return NULL;
+    }
+    result->data    = NULL;
+    result->message = NULL;
+
+    /* Build a simple text table: name | role */
+    /* Max size: header + separator + 64 rows * max line width */
+    const int max_line = AUTH_KEY_NAME_MAX + 16;
+    const int buf_size = 64 + (AUTH_MAX_KEYS * max_line);
+    char*     buf      = (char*)malloc((size_t)buf_size);
+    if(buf == NULL) {
+        result->code    = -1;
+        result->message = EXECUTION_ERROR_MESSAGES[EX_MEMORY_ALLOCATION_FAILED];
+        return result;
+    }
+
+    int n = 0;
+    n += snprintf(buf + n, (size_t)(buf_size - n),
+                  "%-63s | role\n", "name");
+    n += snprintf(buf + n, (size_t)(buf_size - n),
+                  "%-63s-+----------\n",
+                  "----------------------------------------------------------------");
+
+    for(int i = 0; i < g_auth_store.count && n < buf_size - 1; i++) {
+        const char* role_str =
+            (g_auth_store.keys[i].role == ROLE_ADMIN) ? "admin" : "readonly";
+        n += snprintf(buf + n, (size_t)(buf_size - n),
+                      "%-63s | %s\n",
+                      g_auth_store.keys[i].name,
+                      role_str);
+    }
+
+    result->code = g_auth_store.count;
+    result->data = buf;
+    return result;
 }
 
 /**

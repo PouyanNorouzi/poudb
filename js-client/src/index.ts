@@ -10,12 +10,16 @@ export {
 export { parseTable } from "./parsers/table.js";
 export {
     buildAdd,
+    buildAddKey,
+    buildAuth,
     buildCount,
     buildCreate,
     buildCreateIndex,
     buildDel,
+    buildDelKey,
     buildGet,
     buildGetAll,
+    buildListKeys,
     buildSearch,
     buildUp,
 } from "./protocol/commands.js";
@@ -24,6 +28,7 @@ export type {
     CodeResponse,
     CommandResponse,
     CommandValue,
+    KeyRole,
     MessageResponse,
     ParsedTable,
     QueryResult,

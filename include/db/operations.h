@@ -1,6 +1,7 @@
 #ifndef OPERATIONS_H
 #define OPERATIONS_H
 
+#include "auth.h"
 #include "parser.h"
 
 /**
@@ -36,6 +37,22 @@ typedef struct {
  * @return CommandResult pointer with code and error message (caller must free)
  */
 CommandResult* execute_command(Command* cmd);
+
+/**
+ * Execute an ADD_KEY command: generate a token, store its hash, return token.
+ * The caller receives the raw token (shown once) in result->data.
+ */
+CommandResult* execute_add_key(const AddKeyData* data);
+
+/**
+ * Execute a DEL_KEY command: remove a key from the auth store.
+ */
+CommandResult* execute_del_key(const DelKeyData* data);
+
+/**
+ * Execute a LIST_KEYS command: return a name/role table.
+ */
+CommandResult* execute_list_keys(void);
 
 /**
  * Free a CommandResult and its data

@@ -1,14 +1,18 @@
-import { ReconnectExhaustedError } from "./errors.js";
+import { ReconnectExhaustedError, ServerMessageError } from "./errors.js";
 import { PoudbConnection } from "./net/connection.js";
 import { discriminateResponse } from "./net/response-discriminator.js";
 import {
     buildAdd,
+    buildAddKey,
+    buildAuth,
     buildCount,
     buildCreate,
     buildCreateIndex,
     buildDel,
+    buildDelKey,
     buildGet,
     buildGetAll,
+    buildListKeys,
     buildSearch,
     buildUp,
 } from "./protocol/commands.js";
@@ -17,6 +21,7 @@ import {
     ClientOptions,
     CommandResponse,
     CommandValue,
+    KeyRole,
     ParsedTable,
     QueryResult,
     SchemaField,
@@ -50,8 +55,15 @@ export class PoudbClient {
         );
     }
 
-    public connect(): Promise<void> {
-        return this.connection.connect(this.host, this.port);
+    public async connect(): Promise<void> {
+        await this.connection.connect(this.host, this.port);
+        if (this.options.key != null) {
+            const response = await this.sendRaw(buildAuth(this.options.key));
+            if (response.kind === "message") {
+                await this.connection.disconnect();
+                throw new ServerMessageError(response.message);
+            }
+        }
     }
 
     public disconnect(): Promise<void> {
@@ -115,6 +127,51 @@ export class PoudbClient {
     public async createIndex(db: string, field: string): Promise<number> {
         const response = await this.sendRaw(buildCreateIndex(db, field));
         return assertCode(response);
+    }
+
+    /**
+     * Authenticate this connection with a token.
+     * Returns the privilege level: 1 = readonly, 2 = admin.
+     */
+    public async auth(token: string): Promise<number> {
+        const response = await this.sendRaw(buildAuth(token));
+        return assertCode(response);
+    }
+
+    /**
+     * Generate a new auth key (admin only).
+     * Returns the raw token — shown exactly once.
+     */
+    public async addKey(name: string, role: KeyRole): Promise<string> {
+        const response = await this.sendRaw(buildAddKey(name, role));
+        if (response.kind !== "message" && response.kind !== "table") {
+            // data response comes back as a message (raw text)
+            // fall through to assertCode which will throw
+        }
+        if (response.kind === "message" && !response.message.startsWith("ERR")) {
+            return response.message;
+        }
+        // The server sends the token as plain data (no table/code format),
+        // so it arrives as a raw message response.
+        if (response.kind === "message") {
+            throw new ServerMessageError(response.message);
+        }
+        // Numeric code means an error occurred
+        assertCode(response);
+        // unreachable
+        return "";
+    }
+
+    /** Remove an auth key by name (admin only). */
+    public async delKey(name: string): Promise<number> {
+        const response = await this.sendRaw(buildDelKey(name));
+        return assertCode(response);
+    }
+
+    /** List all auth keys as a table (admin only). */
+    public async listKeys(): Promise<QueryResult<ParsedTable>> {
+        const response = await this.sendRaw(buildListKeys());
+        return assertTable(response);
     }
 
     private async sendWithReconnect(command: string): Promise<string> {

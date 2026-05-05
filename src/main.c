@@ -6,6 +6,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "auth.h"
 #include "config/runtime_config.h"
 #include "connection_manager.h"
 #include "db/data_model.h"
@@ -40,6 +41,11 @@ int main(int argc, char* argv[]) {
     Command*          command;
     EpollEvent*       events;
 
+    if(sodium_init() < 0) {
+        fprintf(stderr, "Failed to initialize libsodium\n");
+        return EXIT_FAILURE;
+    }
+
     res = runtime_config_init(&config, argc, argv);
     if(res == 1) {
         return EXIT_SUCCESS;
@@ -58,9 +64,27 @@ int main(int argc, char* argv[]) {
     }
 
     puts("Starting to make the server");
+    auth_store_init(&g_auth_store);
     init_db_storage();
     if(persistence_load_all(config.snapshotPath) != 0) {
         fprintf(stderr, "Failed to load snapshot, starting with empty state\n");
+    }
+
+    /* Bootstrap: generate an admin key when no keys exist yet. */
+    if(g_auth_store.count == 0) {
+        char token[AUTH_TOKEN_BUF_SIZE];
+        if(auth_generate_token(token) == 0 &&
+           auth_add_key(&g_auth_store, "admin", token, ROLE_ADMIN) == 0) {
+            printf("[AUTH] First-run admin key: %s\n", token);
+            puts("[AUTH] Store it securely - it will not be shown again.");
+            /* Persist immediately so the hash survives a restart. */
+            if(persistence_save_all(config.snapshotPath) != 0) {
+                fprintf(stderr, "Warning: failed to persist initial admin key\n");
+            }
+        } else {
+            fprintf(stderr, "Failed to generate initial admin key\n");
+        }
+        sodium_memzero(token, sizeof(token));
     }
 
     autosaveState.enabled = 0;
@@ -141,27 +165,57 @@ int main(int argc, char* argv[]) {
                                   command->data.error,
                                   MAX_ERROR_LENGTH);
                         free_command(command, 0);
-                    } else {
-                        CommandResult* result = execute_command(command);
-
-                        if(result != NULL) {
-                            if(result->message != NULL) {
-                                send_data(eventfd,
-                                          result->message,
-                                          strlen(result->message));
-                            } else if(result->data != NULL) {
-                                send_data(eventfd,
-                                          result->data,
-                                          strlen(result->data));
-                            } else {
-                                send_int(eventfd, result->code);
-                            }
-                            free_command_result(result);
+                    } else if(command->op == OP_AUTH) {
+                        /* Always permitted: authenticate this connection. */
+                        AuthLevel level =
+                            auth_verify(&g_auth_store,
+                                        command->data.auth.token);
+                        if(level == AUTH_NONE) {
+                            const char* msg = "ERR Invalid token";
+                            send_data(eventfd, msg, strlen(msg));
+                        } else {
+                            set_client_auth(&cm, eventfd, level);
+                            send_int(eventfd, (int)level);
                         }
-                        // Strings transferred to DB for ADD/UP operations
-                        int transferred =
-                            (command->op == OP_ADD || command->op == OP_UP);
-                        free_command(command, transferred);
+                        free_command(command, 0);
+                    } else {
+                        /* All other commands require authentication. */
+                        AuthLevel auth = get_client_auth(&cm, eventfd);
+                        if(auth == AUTH_NONE) {
+                            const char* msg = "ERR Authentication required";
+                            send_data(eventfd, msg, strlen(msg));
+                            free_command(command, 0);
+                        } else if(auth == AUTH_READONLY &&
+                                  command->op != OP_GET &&
+                                  command->op != OP_GET_ALL &&
+                                  command->op != OP_SEARCH &&
+                                  command->op != OP_COUNT) {
+                            const char* msg = "ERR Permission denied";
+                            send_data(eventfd, msg, strlen(msg));
+                            free_command(command, 0);
+                        } else {
+                            CommandResult* result = execute_command(command);
+
+                            if(result != NULL) {
+                                if(result->message != NULL) {
+                                    send_data(eventfd,
+                                              result->message,
+                                              strlen(result->message));
+                                } else if(result->data != NULL) {
+                                    send_data(eventfd,
+                                              result->data,
+                                              strlen(result->data));
+                                } else {
+                                    send_int(eventfd, result->code);
+                                }
+                                free_command_result(result);
+                            }
+                            // Strings transferred to DB for ADD/UP operations
+                            int transferred =
+                                (command->op == OP_ADD ||
+                                 command->op == OP_UP);
+                            free_command(command, transferred);
+                        }
                     }
                 }
 

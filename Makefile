@@ -2,7 +2,7 @@
 TARGET = poudb
 CC = gcc
 CFLAGS = -Wall -Wextra -O2 -Iinclude -MMD
-LDFLAGS = -linih
+LDFLAGS = -linih -lsodium
 SRC_DIR = src
 OBJ_DIR = build
 BIN_DIR = bin
@@ -52,8 +52,16 @@ $(BIN_DIR)/client: $(TEST_DIR)/client.c | $(BIN_DIR)
 # Filter out main.o to avoid duplicate main symbol
 TEST_OBJS := $(filter-out $(OBJ_DIR)/main.o, $(OBJS))
 
-test: test_parser test_operations test_config
+test: test_parser test_operations test_config test_auth
 	@echo "All tests completed."
+
+test_auth: $(BIN_DIR)/test_auth
+	@echo "Running auth tests..."
+	./$(BIN_DIR)/test_auth
+
+$(BIN_DIR)/test_auth: $(TEST_DIR)/test_auth.c $(TEST_OBJS) | $(BIN_DIR)
+	$(CC) $(CFLAGS) $< $(TEST_OBJS) $(LDFLAGS) $(TEST_LDFLAGS) -o $@
+	@echo "Auth tests built successfully."
 
 test_parser: $(BIN_DIR)/test_parser
 	@echo "Running parser tests..."
@@ -92,8 +100,12 @@ run_client: test_client
 VALGRIND = valgrind
 VALGRIND_FLAGS = --leak-check=full --show-leak-kinds=all --track-origins=yes --error-exitcode=1
 
-valgrind: valgrind_parser valgrind_operations valgrind_config
+valgrind: valgrind_parser valgrind_operations valgrind_config valgrind_auth
 	@echo "All Valgrind checks completed."
+
+valgrind_auth: $(BIN_DIR)/test_auth
+	@echo "Running Valgrind on auth tests..."
+	$(VALGRIND) $(VALGRIND_FLAGS) ./$(BIN_DIR)/test_auth
 
 valgrind_parser: $(BIN_DIR)/test_parser
 	@echo "Running Valgrind on parser tests..."
@@ -117,4 +129,4 @@ install: all
 uninstall:
 	PREFIX="$(PREFIX)" DESTDIR="$(DESTDIR)" BINARY_NAME="$(TARGET)" SERVICE_NAME="$(SERVICE_NAME)" ./$(UNINSTALL_SCRIPT)
 
-.PHONY: all clean install uninstall test test_client run_server run_client run_test valgrind valgrind_parser valgrind_operations valgrind_config test_config
+.PHONY: all clean install uninstall test test_client run_server run_client run_test valgrind valgrind_parser valgrind_operations valgrind_config valgrind_auth test_config test_auth

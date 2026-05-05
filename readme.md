@@ -6,7 +6,8 @@ A lightweight, standalone database written in C. Runs as its own process and com
 
 * Custom in-memory and persistent storage engine
 * Text-based client protocol over TCP sockets
-* Basic operations: `SET`, `GET`, `DELETE`
+* Operations: `CREATE`, `ADD`, `UP`, `GET`, `DEL`, `GET_ALL`, `SEARCH`, `COUNT`, `CREATE_INDEX`
+* Token-based authentication with admin and readonly roles
 * Minimal dependencies and built-in memory management
 * Scalable build system using GNU Make
 * Clean modular architecture for future extensibility
@@ -71,7 +72,66 @@ Create an index on a field for faster queries.
 CREATE_INDEX users name
 ```
 
-## Project Structure
+## Authentication
+
+All connections must authenticate before issuing any command. Authentication is token-based with two privilege levels:
+
+| Role | Permitted operations |
+|------|---------------------|
+| `admin` | All operations including key management |
+| `readonly` | `GET`, `GET_ALL`, `SEARCH`, `COUNT` |
+
+### First run
+
+On first startup, when no keys exist, the server automatically generates an admin token and prints it to stdout:
+
+```
+[AUTH] First-run admin key: 3f2a1b...
+[AUTH] Store it securely - it will not be shown again.
+```
+
+Save this token — it is shown exactly once.
+
+### AUTH
+Authenticate the current connection. Must be sent before any other command.
+Returns `1` for readonly or `2` for admin on success, or an error message on failure.
+```
+AUTH <token>
+```
+
+### ADD_KEY
+Generate a new token and store it under a name (admin only).
+The raw token is returned exactly once in the response — save it immediately.
+```
+ADD_KEY alice readonly
+ADD_KEY deploy admin
+```
+
+### DEL_KEY
+Revoke a key by name (admin only). Existing connections already authenticated with this token are not affected until they reconnect.
+```
+DEL_KEY alice
+```
+
+### LIST_KEYS
+List all key names and their roles (admin only). Tokens are never shown.
+```
+LIST_KEYS
+```
+
+### Dependency
+
+Authentication uses [libsodium](https://libsodium.org) for token generation (`randombytes_buf`) and Argon2id password hashing (`crypto_pwhash_str`).
+
+```bash
+# Debian/Ubuntu
+sudo apt install libsodium-dev
+
+# Arch
+sudo pacman -S libsodium
+```
+
+Key hashes are stored in the snapshot file (format version 2). Snapshots from version 1 (pre-auth) load cleanly but will trigger a first-run key generation on next startup.
 
 ```
 poudb/

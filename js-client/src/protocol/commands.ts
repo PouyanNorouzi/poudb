@@ -1,4 +1,4 @@
-import { CommandValue, SchemaField, UpdateValue } from "../types.js";
+import { CommandValue, KeyRole, SchemaField, UpdateValue } from "../types.js";
 import { formatValue, joinValues } from "./escaping.js";
 
 function fieldsSegment(fields?: string[]): string {
@@ -53,4 +53,20 @@ export function buildCount(db: string): string {
 
 export function buildCreateIndex(db: string, field: string): string {
     return `CREATE_INDEX ${db} ${field}`;
+}
+
+export function buildAuth(token: string): string {
+    return `AUTH ${token}`;
+}
+
+export function buildAddKey(name: string, role: KeyRole): string {
+    return `ADD_KEY ${name} ${role}`;
+}
+
+export function buildDelKey(name: string): string {
+    return `DEL_KEY ${name}`;
+}
+
+export function buildListKeys(): string {
+    return `LIST_KEYS`;
 }
