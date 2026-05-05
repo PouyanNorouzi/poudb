@@ -17,7 +17,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libcriterion-dev libinih-dev
+          sudo apt-get install -y libcriterion-dev libinih-dev libsodium-dev
 
       - name: Build project
         run: make all
