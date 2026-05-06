@@ -55,6 +55,11 @@ CommandResult* execute_del_key(const DelKeyData* data);
 CommandResult* execute_list_keys(void);
 
 /**
+ * Execute a WHOAMI command: return the authenticated key name.
+ */
+CommandResult* execute_whoami(const WhoamiData* data);
+
+/**
  * Free a CommandResult and its data
  *
  * @param result Pointer to the CommandResult to free

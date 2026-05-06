@@ -70,3 +70,7 @@ export function buildDelKey(name: string): string {
 export function buildListKeys(): string {
     return `LIST_KEYS`;
 }
+
+export function buildWhoami(): string {
+    return `WHOAMI`;
+}

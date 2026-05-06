@@ -68,4 +68,13 @@ int auth_del_key(AuthStore* store, const char* name);
  */
 AuthLevel auth_verify(const AuthStore* store, const char* token);
 
+/**
+ * Like auth_verify(), but also copies the matched key's name into name_out
+ * (which must be at least AUTH_KEY_NAME_MAX bytes).
+ * Sets name_out to "" when AUTH_NONE is returned.
+ */
+AuthLevel auth_verify_ex(const AuthStore* store,
+                         const char*      token,
+                         char             name_out[AUTH_KEY_NAME_MAX]);
+
 #endif /* AUTH_H */

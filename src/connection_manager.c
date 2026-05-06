@@ -18,24 +18,29 @@ int init_connection_manager(ConnectionManager* cm, int maxClients) {
     cm->max_clients  = maxClients;
     cm->clients      = (int*)malloc((size_t)maxClients * sizeof(int));
     cm->client_auth  = (AuthLevel*)malloc((size_t)maxClients * sizeof(AuthLevel));
+    cm->client_names = (char (*)[AUTH_KEY_NAME_MAX])malloc(
+        (size_t)maxClients * AUTH_KEY_NAME_MAX);
 
     if(cm->epollfd == -1) {
         log_errno("epoll_create1");
         return -1;
     }
 
-    if(cm->clients == NULL || cm->client_auth == NULL) {
+    if(cm->clients == NULL || cm->client_auth == NULL || cm->client_names == NULL) {
         free(cm->clients);
         free(cm->client_auth);
+        free(cm->client_names);
         close(cm->epollfd);
-        cm->epollfd     = -1;
-        cm->clients     = NULL;
-        cm->client_auth = NULL;
+        cm->epollfd      = -1;
+        cm->clients      = NULL;
+        cm->client_auth  = NULL;
+        cm->client_names = NULL;
         return -1;
     }
 
     memset(cm->clients, -1, (size_t)maxClients * sizeof(int));
     memset(cm->client_auth, AUTH_NONE, (size_t)maxClients * sizeof(AuthLevel));
+    memset(cm->client_names, 0, (size_t)maxClients * AUTH_KEY_NAME_MAX);
     return 0;
 }
 
@@ -67,6 +72,7 @@ int add_client(ConnectionManager* cm, int clientfd) {
     }
 
     cm->client_auth[cm->client_count] = AUTH_NONE;
+    memset(cm->client_names[cm->client_count], 0, AUTH_KEY_NAME_MAX);
     cm->clients[cm->client_count++]    = clientfd;
     return 0;
 }
@@ -82,10 +88,12 @@ int remove_client(ConnectionManager* cm, int clientfd) {
             for(int j = i; j < cm->client_count - 1; j++) {
                 cm->clients[j]     = cm->clients[j + 1];
                 cm->client_auth[j] = cm->client_auth[j + 1];
+                memcpy(cm->client_names[j], cm->client_names[j + 1], AUTH_KEY_NAME_MAX);
             }
             cm->client_count--;
             cm->clients[cm->client_count]     = -1;
             cm->client_auth[cm->client_count] = AUTH_NONE;
+            memset(cm->client_names[cm->client_count], 0, AUTH_KEY_NAME_MAX);
             return 0;
         }
     }
@@ -132,6 +140,29 @@ void set_client_auth(ConnectionManager* cm, int fd, AuthLevel level) {
     }
 }
 
+void get_client_name(const ConnectionManager* cm,
+                     int                      fd,
+                     char                     name_out[AUTH_KEY_NAME_MAX]) {
+    for(int i = 0; i < cm->client_count; i++) {
+        if(cm->clients[i] == fd) {
+            strncpy(name_out, cm->client_names[i], AUTH_KEY_NAME_MAX - 1);
+            name_out[AUTH_KEY_NAME_MAX - 1] = '\0';
+            return;
+        }
+    }
+    name_out[0] = '\0';
+}
+
+void set_client_name(ConnectionManager* cm, int fd, const char* name) {
+    for(int i = 0; i < cm->client_count; i++) {
+        if(cm->clients[i] == fd) {
+            strncpy(cm->client_names[i], name, AUTH_KEY_NAME_MAX - 1);
+            cm->client_names[i][AUTH_KEY_NAME_MAX - 1] = '\0';
+            return;
+        }
+    }
+}
+
 void close_all_clients(ConnectionManager* cm) {
     for(int i = 0; i < cm->client_count; i++) {
         struct epoll_event event = {0};
@@ -139,6 +170,7 @@ void close_all_clients(ConnectionManager* cm) {
         close(cm->clients[i]);
         cm->clients[i]     = -1;
         cm->client_auth[i] = AUTH_NONE;
+        memset(cm->client_names[i], 0, AUTH_KEY_NAME_MAX);
     }
     cm->client_count = 0;
 }
@@ -156,7 +188,9 @@ void destroy_connection_manager(ConnectionManager* cm) {
 
     free(cm->clients);
     free(cm->client_auth);
-    cm->clients     = NULL;
-    cm->client_auth = NULL;
-    cm->max_clients = 0;
+    free(cm->client_names);
+    cm->clients      = NULL;
+    cm->client_auth  = NULL;
+    cm->client_names = NULL;
+    cm->max_clients  = 0;
 }

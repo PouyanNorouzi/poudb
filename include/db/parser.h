@@ -23,6 +23,7 @@ typedef enum {
     OP_ADD_KEY,      /* Add an auth key (admin only) */
     OP_DEL_KEY,      /* Delete an auth key (admin only) */
     OP_LIST_KEYS,    /* List auth keys (admin only) */
+    OP_WHOAMI,       /* Return the name of the authenticated user */
     OP_ERROR         /* When an error has occured when parsing */
 } Operation;
 
@@ -167,6 +168,14 @@ typedef struct {
 } DelKeyData;
 
 /**
+ * Data structure for OP_WHOAMI operation
+ * WHOAMI (no arguments)
+ */
+typedef struct {
+    char name[AUTH_KEY_NAME_MAX]; /* Filled by main.c from ConnectionManager */
+} WhoamiData;
+
+/**
  * Command structure representing a parsed command
  */
 typedef struct {
@@ -184,6 +193,7 @@ typedef struct {
         AuthData        auth;
         AddKeyData      add_key;
         DelKeyData      del_key;
+        WhoamiData      whoami;
         char            error[MAX_ERROR_LENGTH];
     } data; /* Operation-specific data */
 } Command;

@@ -9,6 +9,7 @@ import {
     buildGetAll,
     buildSearch,
     buildUp,
+    buildWhoami,
 } from "../../src/protocol/commands";
 
 describe("command builders", () => {
@@ -39,5 +40,9 @@ describe("command builders", () => {
         expect(buildDel("users", 7)).toBe("DEL users 7");
         expect(buildCount("users")).toBe("COUNT users");
         expect(buildCreateIndex("users", "name")).toBe("CREATE_INDEX users name");
+    });
+
+    it("builds whoami command", () => {
+        expect(buildWhoami()).toBe("WHOAMI");
     });
 });

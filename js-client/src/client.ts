@@ -15,6 +15,7 @@ import {
     buildListKeys,
     buildSearch,
     buildUp,
+    buildWhoami,
 } from "./protocol/commands.js";
 import { assertCode, assertTable } from "./operations.js";
 import {
@@ -172,6 +173,19 @@ export class PoudbClient {
     public async listKeys(): Promise<QueryResult<ParsedTable>> {
         const response = await this.sendRaw(buildListKeys());
         return assertTable(response);
+    }
+
+    /** Return the name of the authenticated key for this connection. */
+    public async whoami(): Promise<string> {
+        const response = await this.sendRaw(buildWhoami());
+        if (response.kind === "message" && !response.message.startsWith("ERR")) {
+            return response.message;
+        }
+        if (response.kind === "message") {
+            throw new ServerMessageError(response.message);
+        }
+        assertCode(response); // throws
+        return "";
     }
 
     private async sendWithReconnect(command: string): Promise<string> {

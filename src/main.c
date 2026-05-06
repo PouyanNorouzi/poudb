@@ -170,14 +170,17 @@ int main(int argc, char* argv[]) {
                         free_command(command, 0);
                     } else if(command->op == OP_AUTH) {
                         /* Always permitted: authenticate this connection. */
+                        char      auth_name[AUTH_KEY_NAME_MAX];
                         AuthLevel level =
-                            auth_verify(&g_auth_store,
-                                        command->data.auth.token);
+                            auth_verify_ex(&g_auth_store,
+                                           command->data.auth.token,
+                                           auth_name);
                         if(level == AUTH_NONE) {
                             const char* msg = "ERR Invalid token";
                             send_data(eventfd, msg, strlen(msg));
                         } else {
                             set_client_auth(&cm, eventfd, level);
+                            set_client_name(&cm, eventfd, auth_name);
                             send_int(eventfd, (int)level);
                         }
                         free_command(command, 0);
@@ -192,11 +195,16 @@ int main(int argc, char* argv[]) {
                                   command->op != OP_GET &&
                                   command->op != OP_GET_ALL &&
                                   command->op != OP_SEARCH &&
-                                  command->op != OP_COUNT) {
+                                  command->op != OP_COUNT &&
+                                  command->op != OP_WHOAMI) {
                             const char* msg = "ERR Permission denied";
                             send_data(eventfd, msg, strlen(msg));
                             free_command(command, 0);
                         } else {
+                            if(command->op == OP_WHOAMI) {
+                                get_client_name(&cm, eventfd,
+                                                command->data.whoami.name);
+                            }
                             CommandResult* result = execute_command(command);
 
                             if(result != NULL) {

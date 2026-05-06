@@ -10,7 +10,7 @@
 
 #include "auth.h"
 
-#define COMMAND_LENGTH  13
+#define COMMAND_LENGTH  14
 #define TYPE_STR_LENGTH 32
 
 /**
@@ -28,10 +28,11 @@ static const char* COMMAND_STRINGS[] = {"CREATE",
                                         "AUTH",
                                         "ADD_KEY",
                                         "DEL_KEY",
-                                        "LIST_KEYS"};
+                                        "LIST_KEYS",
+                                        "WHOAMI"};
 
 const char* ERROR_MESSAGES[] = {
-    "Command must be one of CREATE, ADD, UP, GET, DEL, GET_ALL, SEARCH, COUNT, CREATE_INDEX, AUTH, ADD_KEY, DEL_KEY, LIST_KEYS", /* ER_INVALID_COMMAND */
+    "Command must be one of CREATE, ADD, UP, GET, DEL, GET_ALL, SEARCH, COUNT, CREATE_INDEX, AUTH, ADD_KEY, DEL_KEY, LIST_KEYS, WHOAMI", /* ER_INVALID_COMMAND */
     "Format must be CREATE <DB> (type field1, type field2, ...)", /* ER_INVALID_CREATE_FORMAT
                                                                    */
     "Format must be ADD <DB> <KEY> (value1, value2, ...)", /* ER_INVALID_ADD_FORMAT
@@ -73,6 +74,7 @@ static Command* parse_auth(const char* input);
 static Command* parse_add_key(const char* input);
 static Command* parse_del_key(const char* input);
 static Command* parse_list_keys(void);
+static Command* parse_whoami(void);
 static Command* parse_error(ParseError errorCode, const char* detail);
 
 static Operation determine_operation(const char* input);
@@ -148,6 +150,7 @@ Command* parse_command(const char* input) {
         case OP_ADD_KEY:      return parse_add_key(args);
         case OP_DEL_KEY:      return parse_del_key(args);
         case OP_LIST_KEYS:    return parse_list_keys();
+        case OP_WHOAMI:       return parse_whoami();
         default:              return parse_error(ER_INVALID_COMMAND, NULL);
     }
 }
@@ -225,7 +228,7 @@ void free_command(Command* cmd, int strings_transferred) {
 
         default:
             // OP_DEL, OP_COUNT, OP_CREATE_INDEX, OP_AUTH, OP_DEL_KEY,
-            // OP_LIST_KEYS, OP_ERROR have no dynamic memory
+            // OP_LIST_KEYS, OP_WHOAMI, OP_ERROR have no dynamic memory
             break;
     }
 
@@ -381,6 +384,19 @@ static Command* parse_list_keys(void) {
         return parse_error(ER_OTHER, "Failed to allocate memory");
     }
     cmd->op = OP_LIST_KEYS;
+    return cmd;
+}
+
+/**
+ * Parse a WHOAMI operation command (no arguments)
+ */
+static Command* parse_whoami(void) {
+    Command* cmd = (Command*)malloc(sizeof(Command));
+    if(cmd == NULL) {
+        return parse_error(ER_OTHER, "Failed to allocate memory");
+    }
+    cmd->op = OP_WHOAMI;
+    cmd->data.whoami.name[0] = '\0';
     return cmd;
 }
 

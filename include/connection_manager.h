@@ -12,6 +12,7 @@ typedef struct {
     int        epollfd;
     int*       clients;
     AuthLevel* client_auth;
+    char     (*client_names)[AUTH_KEY_NAME_MAX];
     int        client_count;
     int        max_clients;
 } ConnectionManager;
@@ -67,6 +68,20 @@ AuthLevel get_client_auth(const ConnectionManager* cm, int fd);
  * Has no effect if the fd is not a tracked client.
  */
 void set_client_auth(ConnectionManager* cm, int fd, AuthLevel level);
+
+/**
+ * Copies the authenticated key name for fd into name_out (AUTH_KEY_NAME_MAX bytes).
+ * Sets name_out to "" if fd is not found.
+ */
+void get_client_name(const ConnectionManager* cm,
+                     int                      fd,
+                     char                     name_out[AUTH_KEY_NAME_MAX]);
+
+/**
+ * Stores the authenticated key name for the given client fd.
+ * Has no effect if the fd is not a tracked client.
+ */
+void set_client_name(ConnectionManager* cm, int fd, const char* name);
 
 /**
  * Closes all tracked client connections and resets the client array.

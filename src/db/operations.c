@@ -104,6 +104,7 @@ CommandResult* execute_command(Command* cmd) {
         case OP_ADD_KEY:   return execute_add_key(&cmd->data.add_key);
         case OP_DEL_KEY:   return execute_del_key(&cmd->data.del_key);
         case OP_LIST_KEYS: return execute_list_keys();
+        case OP_WHOAMI:    return execute_whoami(&cmd->data.whoami);
         default:
             result = (CommandResult*)malloc(sizeof(CommandResult));
             if(result == NULL) {
@@ -124,6 +125,34 @@ void free_command_result(CommandResult* result) {
         free(result->data);
     }
     free(result);
+}
+
+/**
+ * Execute a WHOAMI operation: return the authenticated key name.
+ */
+CommandResult* execute_whoami(const WhoamiData* data) {
+    log_debug("WHOAMI: name='%s'", data->name);
+
+    CommandResult* result = (CommandResult*)malloc(sizeof(CommandResult));
+    if(result == NULL) {
+        return NULL;
+    }
+    result->message = NULL;
+
+    char* name_copy = (char*)malloc(AUTH_KEY_NAME_MAX);
+    if(name_copy == NULL) {
+        result->code    = -1;
+        result->message = EXECUTION_ERROR_MESSAGES[EX_MEMORY_ALLOCATION_FAILED];
+        result->data    = NULL;
+        return result;
+    }
+
+    strncpy(name_copy, data->name, AUTH_KEY_NAME_MAX - 1);
+    name_copy[AUTH_KEY_NAME_MAX - 1] = '\0';
+
+    result->code = 1;
+    result->data = name_copy;
+    return result;
 }
 
 /**

@@ -22,6 +22,7 @@ export {
     buildListKeys,
     buildSearch,
     buildUp,
+    buildWhoami,
 } from "./protocol/commands.js";
 export type {
     ClientOptions,

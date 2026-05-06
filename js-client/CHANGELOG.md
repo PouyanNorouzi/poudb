@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1
+
+- New `PoudbClient.whoami()` method: returns the authenticated key name for the current connection.
+- New command builder: `buildWhoami`.
+
 ## 0.2.0
 
 - Add token-based authentication support.

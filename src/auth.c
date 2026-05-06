@@ -74,3 +74,20 @@ AuthLevel auth_verify(const AuthStore* store, const char* token) {
     }
     return AUTH_NONE;
 }
+
+AuthLevel auth_verify_ex(const AuthStore* store,
+                         const char*      token,
+                         char             name_out[AUTH_KEY_NAME_MAX]) {
+    for(int i = 0; i < store->count; i++) {
+        if(crypto_pwhash_str_verify(store->keys[i].hash,
+                                    token,
+                                    strlen(token)) == 0) {
+            strncpy(name_out, store->keys[i].name, AUTH_KEY_NAME_MAX - 1);
+            name_out[AUTH_KEY_NAME_MAX - 1] = '\0';
+            return (store->keys[i].role == ROLE_ADMIN) ? AUTH_ADMIN
+                                                       : AUTH_READONLY;
+        }
+    }
+    name_out[0] = '\0';
+    return AUTH_NONE;
+}
