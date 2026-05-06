@@ -55,6 +55,7 @@ const char* ERROR_MESSAGES[] = {
                                                            */
     "Invalid or unsupported data type: %s",    /* ER_INVALID_DATA_TYPE */
     "Syntax error: %s",                        /* ER_SYNTAX_ERROR */
+    "Limit exceeded: %s",                      /* ER_LIMIT_EXCEEDED */
     "Unknown error occured with the parser %s" /* ER_OTHER */
 };
 
@@ -511,6 +512,12 @@ static Command* parse_create(const char* input) {
         }
     }
 
+    if(fieldCount > MAX_FIELDS_PER_DB) {
+        free_fields_array(fields, fieldCount);
+        free(cmd);
+        return parse_error(ER_LIMIT_EXCEEDED, "too many fields");
+    }
+
     cmd->data.create.fields     = fields;
     cmd->data.create.fieldCount = fieldCount;
 
@@ -650,6 +657,10 @@ static Command* parse_add(const char* args) {
         free(cmd);
         return parse_error(ER_SYNTAX_ERROR, "expected ',' or ')'");
     }
+    if(values_result == -8) {
+        free(cmd);
+        return parse_error(ER_LIMIT_EXCEEDED, "string value too long");
+    }
 
     cmd->data.add.values     = values;
     cmd->data.add.valueCount = valueCount;
@@ -786,6 +797,10 @@ static Command* parse_up(const char* args) {
     if(values_result == -7) {
         free(cmd);
         return parse_error(ER_SYNTAX_ERROR, "expected ',' or ')'");
+    }
+    if(values_result == -8) {
+        free(cmd);
+        return parse_error(ER_LIMIT_EXCEEDED, "string value too long");
     }
 
     cmd->data.update.values      = values;
@@ -1649,6 +1664,8 @@ static Command* parse_search(const char* input) {
             return parse_error(ER_SYNTAX_ERROR, "invalid double value");
         if(result == -5)
             return parse_error(ER_SYNTAX_ERROR, "invalid integer value");
+        if(result == -8)
+            return parse_error(ER_LIMIT_EXCEEDED, "string value too long");
         return parse_error(ER_SYNTAX_ERROR, "invalid search value");
     }
 
@@ -2197,8 +2214,13 @@ static int parse_single_value(const char** ptr, Data* out_value) {
         if(str == NULL) {
             return -3;  // Unterminated string
         }
+        int slen = strlen(str);
+        if(slen > MAX_STRING_VALUE_LENGTH) {
+            free(str);
+            return -8;  // String value too long
+        }
         out_value->value.s = str;
-        out_value->size    = strlen(str);
+        out_value->size    = slen;
     } else if(strncasecmp(p, "true", 4) == 0 &&
               (p[4] == ',' || p[4] == ')' || isspace((unsigned char)p[4]) ||
                p[4] == '\0')) {

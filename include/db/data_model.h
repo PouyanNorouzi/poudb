@@ -6,6 +6,9 @@
 #define MAX_FIELD_NAME_LENGTH 64
 #define INITIAL_ROW_CAPACITY  16
 #define MAX_ROW_CAPACITY      1048576 /* 1M rows max */
+#define MAX_FIELDS_PER_DB     64     /* Max user-defined fields per DB (excluding auto-key) */
+#define MAX_DB_COUNT          64     /* Max number of databases */
+#define MAX_STRING_VALUE_LENGTH 4096 /* Max string value length in bytes (post-unescape) */
 
 /**
  * Enumeration of supported field types

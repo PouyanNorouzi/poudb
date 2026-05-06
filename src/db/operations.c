@@ -23,6 +23,7 @@ static const char* EXECUTION_ERROR_MESSAGES[] = {
     "Invalid field specified",            /* EX_INVALID_FIELD */
     "Data type mismatch",                 /* EX_TYPE_MISMATCH */
     "Index already exists",               /* EX_INDEX_ALREADY_EXISTS */
+    "Limit exceeded",                     /* EX_LIMIT_EXCEEDED */
     "Unknown error occurred"              /* EX_UNKNOWN_ERROR */
 };
 
@@ -288,6 +289,15 @@ static CommandResult* execute_create(CreateData* data) {
         return result;
     }
 
+    if(data->fieldCount > MAX_FIELDS_PER_DB) {
+        log_warn("CREATE: field count %d exceeds MAX_FIELDS_PER_DB (%d)",
+                 data->fieldCount, MAX_FIELDS_PER_DB);
+        result->code    = -1;
+        result->message = EXECUTION_ERROR_MESSAGES[EX_LIMIT_EXCEEDED];
+        result->data    = NULL;
+        return result;
+    }
+
     log_debug("CREATE: allocating DB structure for '%s'", data->dbName);
     // Create the database
     DB* db = db_create(data->dbName, data->fields, data->fieldCount);
@@ -310,6 +320,9 @@ static CommandResult* execute_create(CreateData* data) {
                     data->dbName);
             result->message =
                 EXECUTION_ERROR_MESSAGES[EX_MEMORY_ALLOCATION_FAILED];
+        } else if(add_result == -4) {
+            log_warn("Database count limit (%d) reached", MAX_DB_COUNT);
+            result->message = EXECUTION_ERROR_MESSAGES[EX_LIMIT_EXCEEDED];
         } else {
             log_error("Failed to add database '%s'", data->dbName);
             result->message = EXECUTION_ERROR_MESSAGES[EX_UNKNOWN_ERROR];
@@ -360,9 +373,12 @@ static CommandResult* execute_add(AddData* data) {
 
     log_debug("ADD: validating value types for '%s'", data->dbName);
     // Validate that value types match field types
-    if(validate_value_types(db, data->values, data->valueCount) != 0) {
+    int type_check = validate_value_types(db, data->values, data->valueCount);
+    if(type_check != 0) {
         result->code    = -1;
-        result->message = EXECUTION_ERROR_MESSAGES[EX_TYPE_MISMATCH];
+        result->message = (type_check == -2)
+            ? EXECUTION_ERROR_MESSAGES[EX_LIMIT_EXCEEDED]
+            : EXECUTION_ERROR_MESSAGES[EX_TYPE_MISMATCH];
         return result;
     }
 
@@ -455,6 +471,16 @@ static CommandResult* execute_up(UpdateData* data) {
         if(!valid) {
             result->code    = -1;
             result->message = EXECUTION_ERROR_MESSAGES[EX_TYPE_MISMATCH];
+            return result;
+        }
+
+        if(expectedType == TYPE_STRING &&
+           singleValue.size > MAX_STRING_VALUE_LENGTH) {
+            log_warn("UP: string value too long at field '%s': %d > %d",
+                     db->fields[fieldIdx].name,
+                     singleValue.size, MAX_STRING_VALUE_LENGTH);
+            result->code    = -1;
+            result->message = EXECUTION_ERROR_MESSAGES[EX_LIMIT_EXCEEDED];
             return result;
         }
     }
@@ -928,6 +954,12 @@ static int validate_value_types(DB* db, Data* values, int valueCount) {
                     log_warn("Type mismatch at field '%s': expected string",
                             db->fields[fieldIdx].name);
                     return -1;
+                }
+                if(val->size > MAX_STRING_VALUE_LENGTH) {
+                    log_warn("String value too long at field '%s': %d > %d",
+                            db->fields[fieldIdx].name,
+                            val->size, MAX_STRING_VALUE_LENGTH);
+                    return -2;
                 }
                 break;
 

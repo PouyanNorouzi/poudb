@@ -2356,3 +2356,101 @@ Test(execute_create_index, indexed_search_consistent_after_add_update_delete) {
     free_command_result(search_result3);
     free_command(search3, 0);
 }
+
+// ============================================================================
+// Limit enforcement tests
+// ============================================================================
+
+TestSuite(execute_limits, .init = setup, .fini = teardown);
+
+Test(execute_limits, create_too_many_fields_ops_safety_net) {
+    /* Build a CreateData with MAX_FIELDS_PER_DB + 1 user fields directly,
+       bypassing the parser, to exercise the operations safety net. */
+    int    n      = MAX_FIELDS_PER_DB + 1;
+    Field* fields = (Field*)malloc(sizeof(Field) * n);
+    cr_assert_not_null(fields);
+    for(int i = 0; i < n; i++) {
+        snprintf(fields[i].name, MAX_FIELD_NAME_LENGTH, "f%d", i);
+        fields[i].type = TYPE_INT;
+    }
+
+    Command cmd;
+    cmd.op                        = OP_CREATE;
+    cmd.data.create.fieldCount    = n;
+    cmd.data.create.fields        = fields;
+    strncpy(cmd.data.create.dbName, "overload", MAX_DB_NAME_LENGTH - 1);
+    cmd.data.create.dbName[MAX_DB_NAME_LENGTH - 1] = '\0';
+
+    CommandResult* result = execute_command(&cmd);
+    cr_assert_not_null(result);
+    cr_assert(result->code < 0);
+    cr_assert_not_null(result->message);
+    free(result);
+    free(fields);
+}
+
+Test(execute_limits, max_db_count_reached) {
+    /* Create MAX_DB_COUNT databases and verify the next one fails. */
+    char dbname[MAX_DB_NAME_LENGTH];
+    for(int i = 0; i < MAX_DB_COUNT; i++) {
+        snprintf(dbname, sizeof(dbname), "db%d", i);
+        char cmdstr[128];
+        snprintf(cmdstr, sizeof(cmdstr), "CREATE %s (int x)", dbname);
+        Command* cmd = parse_command(cmdstr);
+        cr_assert_not_null(cmd);
+        CommandResult* res = execute_command(cmd);
+        cr_assert_not_null(res);
+        cr_assert(res->code >= 0);
+        free(res);
+        free_command(cmd, 0);
+    }
+
+    /* The (MAX_DB_COUNT + 1)-th database must fail */
+    Command* cmd = parse_command("CREATE onemore (int x)");
+    cr_assert_not_null(cmd);
+    CommandResult* res = execute_command(cmd);
+    cr_assert_not_null(res);
+    cr_assert(res->code < 0);
+    cr_assert_not_null(res->message);
+    free(res);
+    free_command(cmd, 0);
+}
+
+Test(execute_limits, add_string_too_long_ops_safety_net) {
+    /* Create a DB with a string field, then try to add a row whose string
+       value exceeds MAX_STRING_VALUE_LENGTH via the operations layer. */
+    Command* create_cmd = parse_command("CREATE strdb (string val)");
+    cr_assert_not_null(create_cmd);
+    CommandResult* cr_res = execute_command(create_cmd);
+    cr_assert_not_null(cr_res);
+    cr_assert(cr_res->code >= 0);
+    free(cr_res);
+    free_command(create_cmd, 0);
+
+    /* Build an AddData manually with an oversized string */
+    int    slen = MAX_STRING_VALUE_LENGTH + 1;
+    char*  str  = (char*)malloc(slen + 1);
+    cr_assert_not_null(str);
+    memset(str, 'x', slen);
+    str[slen] = '\0';
+
+    Data val;
+    val.size    = slen;
+    val.value.s = str;
+
+    Command cmd;
+    cmd.op                    = OP_ADD;
+    cmd.data.add.autoKey      = 1;
+    cmd.data.add.key          = 0;
+    cmd.data.add.valueCount   = 1;
+    cmd.data.add.values       = &val;
+    strncpy(cmd.data.add.dbName, "strdb", MAX_DB_NAME_LENGTH - 1);
+    cmd.data.add.dbName[MAX_DB_NAME_LENGTH - 1] = '\0';
+
+    CommandResult* result = execute_command(&cmd);
+    cr_assert_not_null(result);
+    cr_assert(result->code < 0);
+    cr_assert_not_null(result->message);
+    free(result);
+    free(str);
+}

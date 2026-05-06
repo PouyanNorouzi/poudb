@@ -18,6 +18,7 @@ typedef enum {
     EX_INVALID_FIELD,            /* Invalid field specified */
     EX_TYPE_MISMATCH,            /* Data type mismatch */
     EX_INDEX_ALREADY_EXISTS,     /* Index already exists */
+    EX_LIMIT_EXCEEDED,           /* A configured limit was exceeded */
     EX_UNKNOWN_ERROR             /* Unknown error */
 } ExecutionError;
 

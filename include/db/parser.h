@@ -45,6 +45,7 @@ typedef enum {
     ER_INVALID_IDENTIFIER,    /* Invalid identifier name (db, table, field) */
     ER_INVALID_DATA_TYPE,     /* Invalid or unsupported data type */
     ER_SYNTAX_ERROR,          /* General syntax error in command */
+    ER_LIMIT_EXCEEDED,        /* A configured limit was exceeded */
     ER_OTHER /*When the error is about smth else like memory allocation */
 } ParseError;
 

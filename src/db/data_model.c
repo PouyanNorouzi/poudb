@@ -83,6 +83,18 @@ int add_db(DB* db) {
         return -2;
     }
 
+    // Check global database count limit
+    int count = 0;
+    DBNode* cur = db_list_head;
+    while(cur != NULL) {
+        count++;
+        cur = cur->next;
+    }
+    if(count >= MAX_DB_COUNT) {
+        log_warn("Database count limit (%d) reached", MAX_DB_COUNT);
+        return -4;
+    }
+
     // Create new node
     DBNode* node = (DBNode*)malloc(sizeof(DBNode));
     if(node == NULL) {

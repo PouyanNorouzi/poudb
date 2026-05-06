@@ -2233,3 +2233,110 @@ Test(parse_create_index, extra_arguments) {
 
     free_command(cmd, 0);
 }
+
+// ============================================================================
+// Limit tests
+// ============================================================================
+
+Test(parse_limits, create_too_many_fields) {
+    /* Build CREATE with MAX_FIELDS_PER_DB + 1 fields */
+    char buf[8192];
+    int  pos = snprintf(buf, sizeof(buf), "CREATE bigdb (");
+    for(int i = 0; i <= MAX_FIELDS_PER_DB; i++) {
+        pos += snprintf(buf + pos, sizeof(buf) - pos,
+                        "%sint f%d", i > 0 ? ", " : "", i);
+    }
+    snprintf(buf + pos, sizeof(buf) - pos, ")");
+
+    Command* cmd = parse_command(buf);
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+    free_command(cmd, 0);
+}
+
+Test(parse_limits, create_exactly_max_fields) {
+    /* MAX_FIELDS_PER_DB fields must succeed */
+    char buf[8192];
+    int  pos = snprintf(buf, sizeof(buf), "CREATE maxdb (");
+    for(int i = 0; i < MAX_FIELDS_PER_DB; i++) {
+        pos += snprintf(buf + pos, sizeof(buf) - pos,
+                        "%sint f%d", i > 0 ? ", " : "", i);
+    }
+    snprintf(buf + pos, sizeof(buf) - pos, ")");
+
+    Command* cmd = parse_command(buf);
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_CREATE);
+    cr_assert_eq(cmd->data.create.fieldCount, MAX_FIELDS_PER_DB);
+    free_command(cmd, 0);
+}
+
+Test(parse_limits, add_string_too_long) {
+    /* Build a string value of MAX_STRING_VALUE_LENGTH + 1 bytes */
+    int   len = MAX_STRING_VALUE_LENGTH + 1;
+    char* cmd_str = (char*)malloc(len + 32);
+    cr_assert_not_null(cmd_str);
+    int pos = snprintf(cmd_str, 32, "ADD mydb * (\"");
+    memset(cmd_str + pos, 'a', len);
+    cmd_str[pos + len]     = '"';
+    cmd_str[pos + len + 1] = ')';
+    cmd_str[pos + len + 2] = '\0';
+
+    Command* cmd = parse_command(cmd_str);
+    free(cmd_str);
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+    free_command(cmd, 0);
+}
+
+Test(parse_limits, add_string_exactly_max_length) {
+    /* Exactly MAX_STRING_VALUE_LENGTH bytes must succeed */
+    int   len = MAX_STRING_VALUE_LENGTH;
+    char* cmd_str = (char*)malloc(len + 32);
+    cr_assert_not_null(cmd_str);
+    int pos = snprintf(cmd_str, 32, "ADD mydb * (\"");
+    memset(cmd_str + pos, 'a', len);
+    cmd_str[pos + len]     = '"';
+    cmd_str[pos + len + 1] = ')';
+    cmd_str[pos + len + 2] = '\0';
+
+    Command* cmd = parse_command(cmd_str);
+    free(cmd_str);
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ADD);
+    cr_assert_eq(cmd->data.add.values[0].size, MAX_STRING_VALUE_LENGTH);
+    free_command(cmd, 0);
+}
+
+Test(parse_limits, up_string_too_long) {
+    int   len = MAX_STRING_VALUE_LENGTH + 1;
+    char* cmd_str = (char*)malloc(len + 32);
+    cr_assert_not_null(cmd_str);
+    int pos = snprintf(cmd_str, 32, "UP mydb 1 (\"");
+    memset(cmd_str + pos, 'b', len);
+    cmd_str[pos + len]     = '"';
+    cmd_str[pos + len + 1] = ')';
+    cmd_str[pos + len + 2] = '\0';
+
+    Command* cmd = parse_command(cmd_str);
+    free(cmd_str);
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+    free_command(cmd, 0);
+}
+
+Test(parse_limits, search_string_too_long) {
+    int   len = MAX_STRING_VALUE_LENGTH + 1;
+    char* cmd_str = (char*)malloc(len + 40);
+    cr_assert_not_null(cmd_str);
+    int pos = snprintf(cmd_str, 40, "SEARCH mydb name \"");
+    memset(cmd_str + pos, 'c', len);
+    cmd_str[pos + len]     = '"';
+    cmd_str[pos + len + 1] = '\0';
+
+    Command* cmd = parse_command(cmd_str);
+    free(cmd_str);
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+    free_command(cmd, 0);
+}
