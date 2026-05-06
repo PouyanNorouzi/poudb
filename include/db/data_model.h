@@ -9,15 +9,23 @@
 #define MAX_FIELDS_PER_DB     64     /* Max user-defined fields per DB (excluding auto-key) */
 #define MAX_DB_COUNT          64     /* Max number of databases */
 #define MAX_STRING_VALUE_LENGTH 4096 /* Max string value length in bytes (post-unescape) */
+#define MAX_ARRAY_LENGTH      1024   /* Max elements per array field */
+
+/* Forward declaration — Data and ArrayData reference each other */
+typedef struct ArrayData ArrayData;
 
 /**
  * Enumeration of supported field types
  */
 typedef enum {
-    TYPE_INT,    /* Integer type */
-    TYPE_DOUBLE, /* Double precision floating point */
-    TYPE_BOOL,   /* boolean type */
-    TYPE_STRING, /* String type */
+    TYPE_INT,          /* Integer type */
+    TYPE_DOUBLE,       /* Double precision floating point */
+    TYPE_BOOL,         /* boolean type */
+    TYPE_STRING,       /* String type */
+    TYPE_INT_ARRAY,    /* Homogeneous int array */
+    TYPE_DOUBLE_ARRAY, /* Homogeneous double array */
+    TYPE_BOOL_ARRAY,   /* Homogeneous bool array */
+    TYPE_STRING_ARRAY, /* Homogeneous string array */
 } FieldType;
 
 /**
@@ -34,14 +42,28 @@ typedef struct {
  * Provides a union for different data types
  */
 typedef struct {
-    int size; /* Size of the data (relevant for strings) */
+    int size; /* Type tag: -2=int, -1=double, -3=bool, >=0=string length,
+               * -4=int[], -5=double[], -6=bool[], -7=string[] */
     union {
         int         i; /* Integer value */
         double      d; /* Double value */
         bool        b; /* boolean value */
         const char* s; /* String value (null-terminated) */
+        ArrayData*  a; /* Array value (when size <= -4) */
     } value;           /* Union of possible data types */
 } Data;
+
+/**
+ * Array value — a homogeneous, bounded sequence of scalar elements.
+ * When is_append=1, elements is NULL and append_value carries the single
+ * element to push onto the end of the stored row's array.
+ */
+struct ArrayData {
+    int   count;        /* Number of elements (0 when is_append=1) */
+    int   is_append;    /* 1 = append one element, 0 = full replacement */
+    Data* elements;     /* Element array (NULL when is_append=1) */
+    Data  append_value; /* Value to append (valid when is_append=1) */
+};
 
 /**
  * Row structure representing a database record

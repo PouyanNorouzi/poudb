@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0
+
+- Add array field type support: `"int[]"`, `"double[]"`, `"bool[]"`, `"string[]"` in `SchemaType`.
+- New types: `ArraySchemaType`, `ScalarSchemaType`, `ScalarValue`, `ArrayValue`, `ArrayAppend`.
+- `CommandValue` now includes `ArrayValue` (array of scalars) for ADD commands.
+- `UpdateValue` now supports `ArrayAppend` (`{ arrayAppend: ScalarValue }`) for UP append syntax.
+- `buildAdd` / `buildUp` serialize arrays as `[el1, el2, ...]` and appends as `[...+val]`.
+- New escaping helpers: `formatArray`, `formatArrayAppend`, `formatScalar`.
+- `buildSearch` search value restricted to scalar (`string | number | boolean`) — arrays use contains semantics server-side.
+
 ## 0.3.1
 
 - New `PoudbClient.whoami()` method: returns the authenticated key name for the current connection.

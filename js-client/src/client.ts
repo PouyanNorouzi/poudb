@@ -113,7 +113,7 @@ export class PoudbClient {
     public async search(
         db: string,
         field: string,
-        value: CommandValue,
+        value: string | number | boolean,
         returnFields?: string[],
     ): Promise<QueryResult<ParsedTable>> {
         const response = await this.sendRaw(buildSearch(db, field, value, returnFields));

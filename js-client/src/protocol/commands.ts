@@ -1,5 +1,5 @@
-import { CommandValue, KeyRole, SchemaField, UpdateValue } from "../types.js";
-import { formatValue, joinValues } from "./escaping.js";
+import { ArrayAppend, CommandValue, KeyRole, SchemaField, UpdateValue } from "../types.js";
+import { formatArray, formatArrayAppend, formatScalar, joinValues } from "./escaping.js";
 
 function fieldsSegment(fields?: string[]): string {
     if (!fields || fields.length === 0) {
@@ -19,10 +19,17 @@ export function buildAdd(db: string, key: "*" | number, values: CommandValue[]):
     return `ADD ${db} ${keyPart} (${joinValues(values)})`;
 }
 
+function formatUpdateValue(value: UpdateValue): string {
+    if (value === "_") return "_";
+    if (Array.isArray(value)) return formatArray(value);
+    if (typeof value === "object" && "arrayAppend" in (value as object)) {
+        return formatArrayAppend((value as ArrayAppend).arrayAppend);
+    }
+    return formatScalar(value as string | number | boolean);
+}
+
 export function buildUp(db: string, key: number, values: UpdateValue[]): string {
-    const valuePart = values
-        .map((value) => (value === "_" ? "_" : formatValue(value)))
-        .join(", ");
+    const valuePart = values.map(formatUpdateValue).join(", ");
     return `UP ${db} ${key} (${valuePart})`;
 }
 
@@ -41,10 +48,10 @@ export function buildGetAll(db: string, fields?: string[]): string {
 export function buildSearch(
     db: string,
     field: string,
-    value: CommandValue,
+    value: string | number | boolean,
     returnFields?: string[],
 ): string {
-    return `SEARCH ${db} ${field} ${formatValue(value)}${fieldsSegment(returnFields)}`;
+    return `SEARCH ${db} ${field} ${formatScalar(value)}${fieldsSegment(returnFields)}`;
 }
 
 export function buildCount(db: string): string {

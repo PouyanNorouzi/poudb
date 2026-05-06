@@ -7,6 +7,7 @@ A lightweight, standalone database written in C. Runs as its own process and com
 * Custom in-memory and persistent storage engine
 * Text-based client protocol over TCP sockets
 * Operations: `CREATE`, `ADD`, `UP`, `GET`, `DEL`, `GET_ALL`, `SEARCH`, `COUNT`, `CREATE_INDEX`
+* Typed homogeneous arrays: `int[]`, `double[]`, `bool[]`, `string[]` (up to 1024 elements)
 * Token-based authentication with admin and readonly roles
 * Minimal dependencies and built-in memory management
 * Scalable build system using GNU Make
@@ -16,21 +17,32 @@ A lightweight, standalone database written in C. Runs as its own process and com
 
 ### CREATE
 Create a new database with a defined schema. The key is automatically managed.
+
+Supported field types: `int`, `double`, `bool`, `string`, `int[]`, `double[]`, `bool[]`, `string[]`.
 ```
 CREATE users (string name, int age, bool active)
+CREATE products (string name, double[] prices, string[] tags, bool active)
 ```
 
 ### ADD
 Add a new record to a database. Use `*` for auto-generated key.
+
+Array values are written as comma-separated lists in square brackets. An empty array is `[]`.
 ```
 ADD users * ("Alice", 30, true)
 ADD users 42 ("Bob", 25, false)
+ADD products * ("Widget", [9.99, 14.99], ["sale", "featured"], true)
+ADD products * ("Plain", [], [], false)
 ```
 
 ### UP
 Update an existing record. Use `_` to skip updating a field.
+
+For array fields, provide a new literal to replace the array, or use `[...+value]` to append a single element to the existing array.
 ```
 UP users 42 (_, 26, true)
+UP products 1 (_, [5.99, 9.99], _, _)
+UP products 1 (_, [...+19.99], [...+"clearance"], _)
 ```
 
 ### GET

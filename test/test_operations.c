@@ -2454,3 +2454,511 @@ Test(execute_limits, add_string_too_long_ops_safety_net) {
     free(result);
     free(str);
 }
+
+// ============================================================================
+// Array type operation tests
+// ============================================================================
+
+Test(execute_array, create_add_get, .init = setup, .fini = teardown) {
+    /* CREATE arrdb (int[] scores) */
+    Command* create_cmd = parse_command("CREATE arrdb (int[] scores)");
+    cr_assert_not_null(create_cmd);
+    CommandResult* cr = execute_command(create_cmd);
+    free_command(create_cmd, 0);
+    cr_assert_not_null(cr);
+    cr_assert(cr->code >= 0);
+    free(cr);
+
+    /* ADD arrdb * ([10, 20, 30]) */
+    Command* add_cmd = parse_command("ADD arrdb * ([10, 20, 30])");
+    cr_assert_not_null(add_cmd);
+    CommandResult* ar = execute_command(add_cmd);
+    free_command(add_cmd, 1);
+    cr_assert_not_null(ar);
+    cr_assert(ar->code >= 0);
+    int key = ar->code;
+    free(ar);
+
+    /* GET arrdb <key> */
+    char get_buf[64];
+    snprintf(get_buf, sizeof(get_buf), "GET arrdb %d", key);
+    Command* get_cmd = parse_command(get_buf);
+    cr_assert_not_null(get_cmd);
+    CommandResult* gr = execute_command(get_cmd);
+    free_command(get_cmd, 0);
+    cr_assert_not_null(gr);
+    cr_assert_eq(gr->code, key);
+    cr_assert_not_null(gr->data);
+    /* The output should contain the array representation */
+    cr_assert_not_null(strstr(gr->data, "[10, 20, 30]"));
+    free(gr->data);
+    free(gr);
+}
+
+Test(execute_array, append_element, .init = setup, .fini = teardown) {
+    Command* cc = parse_command("CREATE arrdb (int[] scores)");
+    cr_assert_not_null(cc);
+    CommandResult* cr = execute_command(cc);
+    free_command(cc, 0);
+    free(cr);
+
+    Command* ac = parse_command("ADD arrdb * ([1, 2])");
+    cr_assert_not_null(ac);
+    CommandResult* ar = execute_command(ac);
+    free_command(ac, 1);
+    cr_assert_not_null(ar);
+    int key = ar->code;
+    free(ar);
+
+    char up_buf[64];
+    snprintf(up_buf, sizeof(up_buf), "UP arrdb %d ([...+3])", key);
+    Command* uc = parse_command(up_buf);
+    cr_assert_not_null(uc);
+    CommandResult* ur = execute_command(uc);
+    free_command(uc, 0);
+    cr_assert_not_null(ur);
+    cr_assert_eq(ur->code, key);
+    free(ur);
+
+    char get_buf[64];
+    snprintf(get_buf, sizeof(get_buf), "GET arrdb %d", key);
+    Command* gc = parse_command(get_buf);
+    cr_assert_not_null(gc);
+    CommandResult* gr = execute_command(gc);
+    free_command(gc, 0);
+    cr_assert_not_null(gr);
+    cr_assert_not_null(strstr(gr->data, "[1, 2, 3]"));
+    free(gr->data);
+    free(gr);
+}
+
+Test(execute_array, search_contains, .init = setup, .fini = teardown) {
+    Command* cc = parse_command("CREATE arrdb (int[] scores)");
+    cr_assert_not_null(cc);
+    CommandResult* cr = execute_command(cc);
+    free_command(cc, 0);
+    free(cr);
+
+    Command* ac1 = parse_command("ADD arrdb * ([1, 2, 3])");
+    cr_assert_not_null(ac1);
+    CommandResult* ar1 = execute_command(ac1);
+    free_command(ac1, 1);
+    free(ar1);
+
+    Command* ac2 = parse_command("ADD arrdb * ([4, 5, 6])");
+    cr_assert_not_null(ac2);
+    CommandResult* ar2 = execute_command(ac2);
+    free_command(ac2, 1);
+    free(ar2);
+
+    /* SEARCH for value 2 — only the first row matches */
+    Command* sc = parse_command("SEARCH arrdb scores 2");
+    cr_assert_not_null(sc);
+    CommandResult* sr = execute_command(sc);
+    free_command(sc, 0);
+    cr_assert_not_null(sr);
+    cr_assert_eq(sr->code, 1);
+    free(sr->data);
+    free(sr);
+}
+
+Test(execute_array, create_index_array_rejected, .init = setup, .fini = teardown) {
+    Command* cc = parse_command("CREATE arrdb (int[] scores)");
+    cr_assert_not_null(cc);
+    CommandResult* cr = execute_command(cc);
+    free_command(cc, 0);
+    free(cr);
+
+    Command* ic = parse_command("CREATE_INDEX arrdb scores");
+    cr_assert_not_null(ic);
+    CommandResult* ir = execute_command(ic);
+    free_command(ic, 0);
+    cr_assert_not_null(ir);
+    cr_assert(ir->code < 0);
+    free(ir);
+}
+
+/* ------------------------------------------------------------------ */
+/* Additional array operation tests for all types and all commands     */
+/* ------------------------------------------------------------------ */
+
+/* Helper: execute a CREATE and discard result; fatal if it fails. */
+#define SETUP_DB(cmd_str) do { \
+    Command* _cc = parse_command(cmd_str); \
+    cr_assert_not_null(_cc); \
+    CommandResult* _cr = execute_command(_cc); \
+    cr_assert_not_null(_cr); \
+    cr_assert(_cr->code >= 0); \
+    free(_cr); \
+    free_command(_cc, 0); \
+} while(0)
+
+/* Helper: ADD a row, take ownership of ArrayData. Returns assigned key. */
+static int add_row_own(const char* cmd_str) {
+    Command* ac = parse_command(cmd_str);
+    cr_assert_not_null(ac);
+    CommandResult* ar = execute_command(ac);
+    free_command(ac, 1);
+    cr_assert_not_null(ar);
+    int key = ar->code;
+    cr_assert(key >= 0);
+    free(ar);
+    return key;
+}
+
+/* Helper: GET a row; caller must free result->data and result. */
+static CommandResult* get_row(const char* db, int key) {
+    char buf[128];
+    snprintf(buf, sizeof(buf), "GET %s %d", db, key);
+    Command* gc = parse_command(buf);
+    cr_assert_not_null(gc);
+    CommandResult* gr = execute_command(gc);
+    free_command(gc, 0);
+    cr_assert_not_null(gr);
+    return gr;
+}
+
+/* ---- double[] ---- */
+
+Test(execute_array, double_array_create_add_get, .init = setup, .fini = teardown) {
+    SETUP_DB("CREATE ddb (double[] vals)");
+    int key = add_row_own("ADD ddb * ([1.5, 2.5, 3.5])");
+    CommandResult* gr = get_row("ddb", key);
+    cr_assert_not_null(strstr(gr->data, "1.5"));
+    cr_assert_not_null(strstr(gr->data, "2.5"));
+    cr_assert_not_null(strstr(gr->data, "3.5"));
+    free(gr->data);
+    free(gr);
+}
+
+Test(execute_array, double_array_append, .init = setup, .fini = teardown) {
+    SETUP_DB("CREATE ddb (double[] vals)");
+    int key = add_row_own("ADD ddb * ([1.0, 2.0])");
+
+    char up_buf[64];
+    snprintf(up_buf, sizeof(up_buf), "UP ddb %d ([...+3.0])", key);
+    Command* uc = parse_command(up_buf);
+    cr_assert_not_null(uc);
+    CommandResult* ur = execute_command(uc);
+    free_command(uc, 0);
+    cr_assert_not_null(ur);
+    cr_assert_eq(ur->code, key);
+    free(ur);
+
+    CommandResult* gr = get_row("ddb", key);
+    cr_assert_not_null(strstr(gr->data, "3"));
+    free(gr->data);
+    free(gr);
+}
+
+Test(execute_array, double_array_search_contains, .init = setup, .fini = teardown) {
+    SETUP_DB("CREATE ddb (double[] vals)");
+    add_row_own("ADD ddb * ([1.5, 2.5])");
+    add_row_own("ADD ddb * ([3.5, 4.5])");
+
+    Command* sc = parse_command("SEARCH ddb vals 2.5");
+    cr_assert_not_null(sc);
+    CommandResult* sr = execute_command(sc);
+    free_command(sc, 0);
+    cr_assert_not_null(sr);
+    cr_assert_eq(sr->code, 1);
+    free(sr->data);
+    free(sr);
+}
+
+/* ---- bool[] ---- */
+
+Test(execute_array, bool_array_create_add_get, .init = setup, .fini = teardown) {
+    SETUP_DB("CREATE bdb (bool[] flags)");
+    int key = add_row_own("ADD bdb * ([true, false, true])");
+    CommandResult* gr = get_row("bdb", key);
+    cr_assert_not_null(strstr(gr->data, "true"));
+    cr_assert_not_null(strstr(gr->data, "false"));
+    free(gr->data);
+    free(gr);
+}
+
+Test(execute_array, bool_array_append, .init = setup, .fini = teardown) {
+    SETUP_DB("CREATE bdb (bool[] flags)");
+    int key = add_row_own("ADD bdb * ([true])");
+
+    char up_buf[64];
+    snprintf(up_buf, sizeof(up_buf), "UP bdb %d ([...+false])", key);
+    Command* uc = parse_command(up_buf);
+    cr_assert_not_null(uc);
+    CommandResult* ur = execute_command(uc);
+    free_command(uc, 0);
+    cr_assert_not_null(ur);
+    cr_assert_eq(ur->code, key);
+    free(ur);
+
+    CommandResult* gr = get_row("bdb", key);
+    cr_assert_not_null(strstr(gr->data, "false"));
+    free(gr->data);
+    free(gr);
+}
+
+Test(execute_array, bool_array_search_contains, .init = setup, .fini = teardown) {
+    SETUP_DB("CREATE bdb (bool[] flags)");
+    add_row_own("ADD bdb * ([true, true])");
+    add_row_own("ADD bdb * ([false, false])");
+
+    /* SEARCH for false — only second row matches */
+    Command* sc = parse_command("SEARCH bdb flags false");
+    cr_assert_not_null(sc);
+    CommandResult* sr = execute_command(sc);
+    free_command(sc, 0);
+    cr_assert_not_null(sr);
+    cr_assert_eq(sr->code, 1);
+    free(sr->data);
+    free(sr);
+}
+
+/* ---- string[] ---- */
+
+Test(execute_array, string_array_create_add_get, .init = setup, .fini = teardown) {
+    SETUP_DB("CREATE sdb (string[] tags)");
+    int key = add_row_own("ADD sdb * ([\"alpha\", \"beta\", \"gamma\"])");
+    CommandResult* gr = get_row("sdb", key);
+    cr_assert_not_null(strstr(gr->data, "alpha"));
+    cr_assert_not_null(strstr(gr->data, "beta"));
+    cr_assert_not_null(strstr(gr->data, "gamma"));
+    free(gr->data);
+    free(gr);
+}
+
+Test(execute_array, string_array_append, .init = setup, .fini = teardown) {
+    SETUP_DB("CREATE sdb (string[] tags)");
+    int key = add_row_own("ADD sdb * ([\"foo\"])");
+
+    char up_buf[80];
+    snprintf(up_buf, sizeof(up_buf), "UP sdb %d ([...+\"bar\"])", key);
+    Command* uc = parse_command(up_buf);
+    cr_assert_not_null(uc);
+    CommandResult* ur = execute_command(uc);
+    free_command(uc, 0);
+    cr_assert_not_null(ur);
+    cr_assert_eq(ur->code, key);
+    free(ur);
+
+    CommandResult* gr = get_row("sdb", key);
+    cr_assert_not_null(strstr(gr->data, "bar"));
+    free(gr->data);
+    free(gr);
+}
+
+Test(execute_array, string_array_search_contains, .init = setup, .fini = teardown) {
+    SETUP_DB("CREATE sdb (string[] tags)");
+    add_row_own("ADD sdb * ([\"red\", \"green\"])");
+    add_row_own("ADD sdb * ([\"blue\", \"yellow\"])");
+
+    Command* sc = parse_command("SEARCH sdb tags \"green\"");
+    cr_assert_not_null(sc);
+    CommandResult* sr = execute_command(sc);
+    free_command(sc, 0);
+    cr_assert_not_null(sr);
+    cr_assert_eq(sr->code, 1);
+    free(sr->data);
+    free(sr);
+}
+
+/* ---- empty array ---- */
+
+Test(execute_array, empty_array_add_get, .init = setup, .fini = teardown) {
+    SETUP_DB("CREATE arrdb (int[] scores)");
+    int key = add_row_own("ADD arrdb * ([])");
+    CommandResult* gr = get_row("arrdb", key);
+    cr_assert_not_null(strstr(gr->data, "[]"));
+    free(gr->data);
+    free(gr);
+}
+
+/* ---- array full replace ---- */
+
+Test(execute_array, array_full_replace, .init = setup, .fini = teardown) {
+    SETUP_DB("CREATE arrdb (int[] scores)");
+    int key = add_row_own("ADD arrdb * ([1, 2, 3])");
+
+    char up_buf[64];
+    snprintf(up_buf, sizeof(up_buf), "UP arrdb %d ([10, 20])", key);
+    Command* uc = parse_command(up_buf);
+    cr_assert_not_null(uc);
+    CommandResult* ur = execute_command(uc);
+    free_command(uc, 0);
+    cr_assert_not_null(ur);
+    cr_assert_eq(ur->code, key);
+    free(ur);
+
+    CommandResult* gr = get_row("arrdb", key);
+    cr_assert_not_null(strstr(gr->data, "[10, 20]"));
+    /* old value 3 must not appear */
+    cr_assert_null(strstr(gr->data, ", 3]"));
+    free(gr->data);
+    free(gr);
+}
+
+/* ---- search: no match ---- */
+
+Test(execute_array, search_no_match, .init = setup, .fini = teardown) {
+    SETUP_DB("CREATE arrdb (int[] scores)");
+    add_row_own("ADD arrdb * ([1, 2, 3])");
+    add_row_own("ADD arrdb * ([4, 5, 6])");
+
+    Command* sc = parse_command("SEARCH arrdb scores 99");
+    cr_assert_not_null(sc);
+    CommandResult* sr = execute_command(sc);
+    free_command(sc, 0);
+    cr_assert_not_null(sr);
+    cr_assert_eq(sr->code, 0);
+    free(sr->data);
+    free(sr);
+}
+
+/* ---- GET_ALL with arrays ---- */
+
+Test(execute_array, get_all_shows_arrays, .init = setup, .fini = teardown) {
+    SETUP_DB("CREATE arrdb (int[] scores)");
+    add_row_own("ADD arrdb * ([10, 20])");
+    add_row_own("ADD arrdb * ([30, 40])");
+
+    Command* ga = parse_command("GET_ALL arrdb");
+    cr_assert_not_null(ga);
+    CommandResult* gr = execute_command(ga);
+    free_command(ga, 0);
+    cr_assert_not_null(gr);
+    cr_assert_eq(gr->code, 2);
+    cr_assert_not_null(gr->data);
+    cr_assert_not_null(strstr(gr->data, "scores"));
+    free(gr->data);
+    free(gr);
+}
+
+/* ---- DEL a row that has an array field ---- */
+
+Test(execute_array, del_row_with_array, .init = setup, .fini = teardown) {
+    SETUP_DB("CREATE arrdb (int[] scores)");
+    int key1 = add_row_own("ADD arrdb * ([1, 2])");
+    int key2 = add_row_own("ADD arrdb * ([3, 4])");
+    (void)key2;
+
+    char del_buf[64];
+    snprintf(del_buf, sizeof(del_buf), "DEL arrdb %d", key1);
+    Command* dc = parse_command(del_buf);
+    cr_assert_not_null(dc);
+    CommandResult* dr = execute_command(dc);
+    free_command(dc, 0);
+    cr_assert_not_null(dr);
+    cr_assert_eq(dr->code, key1);
+    free(dr);
+
+    /* COUNT should now be 1 */
+    Command* cnt = parse_command("COUNT arrdb");
+    cr_assert_not_null(cnt);
+    CommandResult* cr2 = execute_command(cnt);
+    free_command(cnt, 0);
+    cr_assert_not_null(cr2);
+    cr_assert_eq(cr2->code, 1);
+    free(cr2);
+}
+
+/* ---- COUNT on DB with array fields ---- */
+
+Test(execute_array, count_with_arrays, .init = setup, .fini = teardown) {
+    SETUP_DB("CREATE arrdb (int[] scores)");
+    add_row_own("ADD arrdb * ([1, 2, 3])");
+    add_row_own("ADD arrdb * ([4, 5, 6])");
+    add_row_own("ADD arrdb * ([7, 8, 9])");
+
+    Command* cnt = parse_command("COUNT arrdb");
+    cr_assert_not_null(cnt);
+    CommandResult* cr2 = execute_command(cnt);
+    free_command(cnt, 0);
+    cr_assert_not_null(cr2);
+    cr_assert_eq(cr2->code, 3);
+    free(cr2);
+}
+
+/* ---- Multi-field DB with mixed scalar and array fields ---- */
+
+Test(execute_array, multi_field_with_array, .init = setup, .fini = teardown) {
+    SETUP_DB("CREATE mdb (int age, int[] scores, string name)");
+    int key = add_row_own("ADD mdb * (25, [100, 200], \"alice\")");
+
+    CommandResult* gr = get_row("mdb", key);
+    cr_assert_not_null(strstr(gr->data, "25"));
+    cr_assert_not_null(strstr(gr->data, "[100, 200]"));
+    cr_assert_not_null(strstr(gr->data, "alice"));
+    free(gr->data);
+    free(gr);
+}
+
+Test(execute_array, multi_field_partial_update_with_array, .init = setup, .fini = teardown) {
+    /* CREATE */
+    Command* cc = parse_command("CREATE mdb (int age, int[] scores, string name)");
+    cr_assert_not_null(cc);
+    CommandResult* cres = execute_command(cc);
+    cr_assert_not_null(cres);
+    cr_assert(cres->code >= 0);
+    free(cres);
+    free_command(cc, 0);
+
+    /* ADD */
+    Command* ac = parse_command("ADD mdb * (25, [1, 2], \"bob\")");
+    cr_assert_not_null(ac);
+    cr_assert_eq(ac->op, OP_ADD);
+    cr_assert_eq(ac->data.add.valueCount, 3);
+    CommandResult* ar = execute_command(ac);
+    free_command(ac, 1);
+    cr_assert_not_null(ar);
+    cr_assert(ar->code >= 0);
+    int key = ar->code;
+    free(ar);
+
+    /* UP: ignore age and name, replace scores */
+    char up_buf[80];
+    snprintf(up_buf, sizeof(up_buf), "UP mdb %d (_, [10, 20, 30], _)", key);
+    Command* uc = parse_command(up_buf);
+    cr_assert_not_null(uc);
+    cr_assert_eq(uc->op, OP_UP);
+    cr_assert_eq(uc->data.update.valueCount, 3);
+    CommandResult* ur = execute_command(uc);
+    free_command(uc, 0);
+    cr_assert_not_null(ur);
+    cr_assert_eq(ur->code, key);
+    free(ur);
+
+    /* GET and verify */
+    char get_buf[64];
+    snprintf(get_buf, sizeof(get_buf), "GET mdb %d", key);
+    Command* gc = parse_command(get_buf);
+    cr_assert_not_null(gc);
+    CommandResult* gr = execute_command(gc);
+    free_command(gc, 0);
+    cr_assert_not_null(gr);
+    cr_assert_not_null(strstr(gr->data, "25"));
+    cr_assert_not_null(strstr(gr->data, "[10, 20, 30]"));
+    cr_assert_not_null(strstr(gr->data, "bob"));
+    free(gr->data);
+    free(gr);
+}
+
+/* ---- execute_create: all four array field types ---- */
+
+Test(execute_create, all_array_field_types, .init = setup, .fini = teardown) {
+    Command* cmd = parse_command(
+        "CREATE adb (int[] ia, double[] da, bool[] ba, string[] sa)");
+    cr_assert_not_null(cmd);
+    CommandResult* cr2 = execute_command(cmd);
+    cr_assert_not_null(cr2);
+    cr_assert_eq(cr2->code, 4);
+    free(cr2);
+    free_command(cmd, 0);
+
+    DB* db = find_db("adb");
+    cr_assert_not_null(db);
+    cr_assert_eq(db->fieldsCount, 5);   /* key + 4 user fields */
+    cr_assert_eq(db->fields[1].type, TYPE_INT_ARRAY);
+    cr_assert_eq(db->fields[2].type, TYPE_DOUBLE_ARRAY);
+    cr_assert_eq(db->fields[3].type, TYPE_BOOL_ARRAY);
+    cr_assert_eq(db->fields[4].type, TYPE_STRING_ARRAY);
+}

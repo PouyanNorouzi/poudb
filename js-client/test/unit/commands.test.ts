@@ -22,11 +22,34 @@ describe("command builders", () => {
         ).toBe("CREATE users (int age, string name)");
     });
 
+    it("builds create command with array fields", () => {
+        expect(
+            buildCreate("users", [
+                { type: "int[]", name: "scores" },
+                { type: "string[]", name: "tags" },
+            ]),
+        ).toBe("CREATE users (int[] scores, string[] tags)");
+    });
+
     it("builds add and up commands", () => {
         expect(buildAdd("users", "*", [10, "Alice", true])).toBe(
             'ADD users * (10, "Alice", true)',
         );
         expect(buildUp("users", 1, [11, "_", false])).toBe('UP users 1 (11, _, false)');
+    });
+
+    it("builds add with array value", () => {
+        expect(buildAdd("db", 1, [[1, 2, 3]])).toBe("ADD db 1 ([1, 2, 3])");
+        expect(buildAdd("db", "*", [[true, false], "hello"])).toBe(
+            'ADD db * ([true, false], "hello")',
+        );
+    });
+
+    it("builds up with array replacement and append", () => {
+        expect(buildUp("db", 1, [[10, 20]])).toBe("UP db 1 ([10, 20])");
+        expect(buildUp("db", 1, [{ arrayAppend: 42 }])).toBe("UP db 1 ([...+42])");
+        expect(buildUp("db", 1, [{ arrayAppend: "tag" }])).toBe('UP db 1 ([...+"tag"])');
+        expect(buildUp("db", 1, ["_", [1, 2]])).toBe("UP db 1 (_, [1, 2])");
     });
 
     it("builds getters and counters", () => {

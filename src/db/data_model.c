@@ -41,6 +41,7 @@ static int  rebuild_enabled_indexes(DB* db);
 static int  rebuild_single_index(DB* db, int fieldIdx);
 static void clear_index(DBFieldIndex* index);
 static int  ensure_index_initialized(DBFieldIndex* index, FieldType type);
+static FieldType    array_elem_type(FieldType type);
 static unsigned int hash_data_value(const Data* value, FieldType type);
 static int  data_value_equals(const Data* a, const Data* b, FieldType type);
 static int  clone_data_value(Data* dst, const Data* src, FieldType type);
@@ -369,34 +370,16 @@ Row* db_get_row(DB* db, int key) {
 
     // Deep copy each value
     for(int i = 0; i < newRow->valueCount; i++) {
-        newRow->values[i].size = sourceRow->values[i].size;
-
-        if(db->fields[i].type == TYPE_STRING) {
-            // Deep copy string
-            const char* srcStr = sourceRow->values[i].value.s;
-            if(srcStr != NULL) {
-                char* newStr = (char*)malloc(strlen(srcStr) + 1);
-                if(newStr == NULL) {
-                    log_errno("malloc");
-                    // Free already copied strings
-                    for(int j = 0; j < i; j++) {
-                        if(db->fields[j].type == TYPE_STRING &&
-                           newRow->values[j].value.s != NULL) {
-                            free((void*)newRow->values[j].value.s);
-                        }
-                    }
-                    free(newRow->values);
-                    free(newRow);
-                    return NULL;
-                }
-                strcpy(newStr, srcStr);
-                newRow->values[i].value.s = newStr;
-            } else {
-                newRow->values[i].value.s = NULL;
+        if(clone_data_value(&newRow->values[i],
+                            &sourceRow->values[i],
+                            db->fields[i].type) != 0) {
+            log_errno("clone_data_value");
+            for(int j = 0; j < i; j++) {
+                free_data_value(&newRow->values[j], db->fields[j].type);
             }
-        } else {
-            // Copy non-string values directly
-            newRow->values[i].value = sourceRow->values[i].value;
+            free(newRow->values);
+            free(newRow);
+            return NULL;
         }
     }
 
@@ -433,33 +416,81 @@ int db_update_row(DB*   db,
             continue;
         }
 
-        int fieldIdx = i + 1;  // Skip key field
+        int       fieldIdx  = i + 1; /* Skip key field */
+        FieldType fieldType = db->fields[fieldIdx].type;
+        int is_array = (fieldType == TYPE_INT_ARRAY  ||
+                        fieldType == TYPE_DOUBLE_ARRAY ||
+                        fieldType == TYPE_BOOL_ARRAY  ||
+                        fieldType == TYPE_STRING_ARRAY);
 
-        // Handle string fields - free old string and copy new one
-        if(db->fields[fieldIdx].type == TYPE_STRING) {
-            // Free old string if it exists
-            if(targetRow->values[fieldIdx].value.s != NULL) {
-                free((void*)targetRow->values[fieldIdx].value.s);
+        if(is_array && values[i].value.a != NULL &&
+           values[i].value.a->is_append) {
+            /* Append one element to the stored array */
+            ArrayData* existing  = targetRow->values[fieldIdx].value.a;
+            int        old_count = (existing != NULL) ? existing->count : 0;
+
+            if(old_count >= MAX_ARRAY_LENGTH) {
+                log_warn("Array field '%s' is already at max length (%d)",
+                         db->fields[fieldIdx].name, MAX_ARRAY_LENGTH);
+                return -5;
             }
 
-            // Copy new string
-            const char* srcStr = values[i].value.s;
-            if(srcStr != NULL) {
-                char* newStr = (char*)malloc(strlen(srcStr) + 1);
-                if(newStr == NULL) {
-                    log_errno("malloc");
+            FieldType  elemType  = array_elem_type(fieldType);
+            int        new_count = old_count + 1;
+            ArrayData* newArr    = (ArrayData*)malloc(sizeof(ArrayData));
+            if(newArr == NULL) {
+                log_errno("malloc");
+                return -4;
+            }
+            newArr->count     = new_count;
+            newArr->is_append = 0;
+            newArr->elements  =
+                (Data*)malloc(sizeof(Data) * (size_t)new_count);
+            if(newArr->elements == NULL) {
+                free(newArr);
+                log_errno("malloc");
+                return -4;
+            }
+
+            for(int j = 0; j < old_count; j++) {
+                if(clone_data_value(&newArr->elements[j],
+                                    &existing->elements[j],
+                                    elemType) != 0) {
+                    for(int k = 0; k < j; k++) {
+                        free_data_value(&newArr->elements[k], elemType);
+                    }
+                    free(newArr->elements);
+                    free(newArr);
+                    log_errno("clone_data_value");
                     return -4;
                 }
-                strcpy(newStr, srcStr);
-                targetRow->values[fieldIdx].value.s = newStr;
-            } else {
-                targetRow->values[fieldIdx].value.s = NULL;
             }
-            targetRow->values[fieldIdx].size = values[i].size;
+
+            if(clone_data_value(&newArr->elements[old_count],
+                                &values[i].value.a->append_value,
+                                elemType) != 0) {
+                for(int k = 0; k < old_count; k++) {
+                    free_data_value(&newArr->elements[k], elemType);
+                }
+                free(newArr->elements);
+                free(newArr);
+                log_errno("clone_data_value");
+                return -4;
+            }
+
+            free_data_value(&targetRow->values[fieldIdx], fieldType);
+            targetRow->values[fieldIdx].size    = values[i].size;
+            targetRow->values[fieldIdx].value.a = newArr;
+
         } else {
-            // Copy non-string values directly
-            targetRow->values[fieldIdx].size  = values[i].size;
-            targetRow->values[fieldIdx].value = values[i].value;
+            /* Full replacement for all types (scalar and full array) */
+            free_data_value(&targetRow->values[fieldIdx], fieldType);
+            if(clone_data_value(&targetRow->values[fieldIdx],
+                                &values[i],
+                                fieldType) != 0) {
+                log_errno("clone_data_value");
+                return -4;
+            }
         }
     }
 
@@ -498,13 +529,9 @@ void db_free_row(DB* db, Row* row) {
     }
 
     if(row->values != NULL) {
-        // Free string values if db is provided
         if(db != NULL) {
             for(int i = 0; i < row->valueCount; i++) {
-                if(db->fields[i].type == TYPE_STRING &&
-                   row->values[i].value.s != NULL) {
-                    free((void*)row->values[i].value.s);
-                }
+                free_data_value(&row->values[i], db->fields[i].type);
             }
         }
         free(row->values);
@@ -722,6 +749,17 @@ static int ensure_index_initialized(DBFieldIndex* index, FieldType type) {
     return 0;
 }
 
+/* Return the scalar element FieldType that corresponds to an array FieldType. */
+static FieldType array_elem_type(FieldType type) {
+    switch(type) {
+        case TYPE_INT_ARRAY:    return TYPE_INT;
+        case TYPE_DOUBLE_ARRAY: return TYPE_DOUBLE;
+        case TYPE_BOOL_ARRAY:   return TYPE_BOOL;
+        case TYPE_STRING_ARRAY: return TYPE_STRING;
+        default:                return TYPE_INT; /* unreachable */
+    }
+}
+
 static unsigned int hash_data_value(const Data* value, FieldType type) {
     if(value == NULL) {
         return 0U;
@@ -783,23 +821,80 @@ static int clone_data_value(Data* dst, const Data* src, FieldType type) {
     }
 
     dst->size = src->size;
-    if(type != TYPE_STRING) {
-        dst->value = src->value;
-        return 0;
-    }
 
-    if(src->value.s == NULL) {
-        dst->value.s = NULL;
-        return 0;
-    }
+    switch(type) {
+        case TYPE_INT:
+        case TYPE_DOUBLE:
+        case TYPE_BOOL:
+            dst->value = src->value;
+            return 0;
 
-    char* copy = (char*)malloc(strlen(src->value.s) + 1);
-    if(copy == NULL) {
-        return -1;
+        case TYPE_STRING: {
+            if(src->value.s == NULL) {
+                dst->value.s = NULL;
+                return 0;
+            }
+            char* copy = (char*)malloc(strlen(src->value.s) + 1);
+            if(copy == NULL) {
+                return -1;
+            }
+            strcpy(copy, src->value.s);
+            dst->value.s = copy;
+            return 0;
+        }
+
+        case TYPE_INT_ARRAY:
+        case TYPE_DOUBLE_ARRAY:
+        case TYPE_BOOL_ARRAY:
+        case TYPE_STRING_ARRAY: {
+            if(src->value.a == NULL) {
+                dst->value.a = NULL;
+                return 0;
+            }
+            ArrayData* srcArr = src->value.a;
+            ArrayData* dstArr = (ArrayData*)malloc(sizeof(ArrayData));
+            if(dstArr == NULL) {
+                return -1;
+            }
+            FieldType elemType        = array_elem_type(type);
+            dstArr->count             = srcArr->count;
+            dstArr->is_append         = srcArr->is_append;
+            dstArr->elements          = NULL;
+            dstArr->append_value.size = 0;
+            if(srcArr->is_append) {
+                if(clone_data_value(&dstArr->append_value,
+                                    &srcArr->append_value,
+                                    elemType) != 0) {
+                    free(dstArr);
+                    return -1;
+                }
+            } else if(srcArr->count > 0) {
+                dstArr->elements =
+                    (Data*)malloc(sizeof(Data) * (size_t)srcArr->count);
+                if(dstArr->elements == NULL) {
+                    free(dstArr);
+                    return -1;
+                }
+                for(int i = 0; i < srcArr->count; i++) {
+                    if(clone_data_value(&dstArr->elements[i],
+                                        &srcArr->elements[i],
+                                        elemType) != 0) {
+                        for(int j = 0; j < i; j++) {
+                            free_data_value(&dstArr->elements[j], elemType);
+                        }
+                        free(dstArr->elements);
+                        free(dstArr);
+                        return -1;
+                    }
+                }
+            }
+            dst->value.a = dstArr;
+            return 0;
+        }
+
+        default:
+            return -1;
     }
-    strcpy(copy, src->value.s);
-    dst->value.s = copy;
-    return 0;
 }
 
 static void free_data_value(Data* value, FieldType type) {
@@ -807,9 +902,38 @@ static void free_data_value(Data* value, FieldType type) {
         return;
     }
 
-    if(type == TYPE_STRING && value->value.s != NULL) {
-        free((void*)value->value.s);
-        value->value.s = NULL;
+    switch(type) {
+        case TYPE_STRING:
+            if(value->value.s != NULL) {
+                free((void*)value->value.s);
+                value->value.s = NULL;
+            }
+            break;
+
+        case TYPE_INT_ARRAY:
+        case TYPE_DOUBLE_ARRAY:
+        case TYPE_BOOL_ARRAY:
+        case TYPE_STRING_ARRAY: {
+            if(value->value.a == NULL) {
+                break;
+            }
+            ArrayData* arr      = value->value.a;
+            FieldType  elemType = array_elem_type(type);
+            if(arr->is_append) {
+                free_data_value(&arr->append_value, elemType);
+            } else if(arr->elements != NULL) {
+                for(int i = 0; i < arr->count; i++) {
+                    free_data_value(&arr->elements[i], elemType);
+                }
+                free(arr->elements);
+            }
+            free(arr);
+            value->value.a = NULL;
+            break;
+        }
+
+        default:
+            break;
     }
 }
 
@@ -865,10 +989,7 @@ static void free_row_values(DB* db, Row* row) {
     }
 
     for(int i = 0; i < row->valueCount; i++) {
-        if(db->fields[i].type == TYPE_STRING &&
-           row->values[i].value.s != NULL) {
-            free((void*)row->values[i].value.s);
-        }
+        free_data_value(&row->values[i], db->fields[i].type);
     }
     free(row->values);
     row->values     = NULL;

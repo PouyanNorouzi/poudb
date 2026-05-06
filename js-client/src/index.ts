@@ -25,6 +25,9 @@ export {
     buildWhoami,
 } from "./protocol/commands.js";
 export type {
+    ArrayAppend,
+    ArraySchemaType,
+    ArrayValue,
     ClientOptions,
     CodeResponse,
     CommandResponse,
@@ -34,6 +37,8 @@ export type {
     ParsedTable,
     QueryResult,
     ReconnectOptions,
+    ScalarSchemaType,
+    ScalarValue,
     SchemaField,
     SchemaType,
     TableResponse,

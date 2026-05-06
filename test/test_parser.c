@@ -2340,3 +2340,333 @@ Test(parse_limits, search_string_too_long) {
     cr_assert_eq(cmd->op, OP_ERROR);
     free_command(cmd, 0);
 }
+
+// ============================================================================
+// Array type parsing tests
+// ============================================================================
+
+Test(parse_create, int_array_field) {
+    Command* cmd = parse_command("CREATE mydb (int[] scores)");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_CREATE);
+    cr_assert_eq(cmd->data.create.fieldCount, 1);
+    cr_assert_eq(cmd->data.create.fields[0].type, TYPE_INT_ARRAY);
+    free_command(cmd, 0);
+}
+
+Test(parse_create, double_array_field) {
+    Command* cmd = parse_command("CREATE mydb (double[] vals)");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_CREATE);
+    cr_assert_eq(cmd->data.create.fields[0].type, TYPE_DOUBLE_ARRAY);
+    free_command(cmd, 0);
+}
+
+Test(parse_create, bool_array_field) {
+    Command* cmd = parse_command("CREATE mydb (bool[] flags)");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_CREATE);
+    cr_assert_eq(cmd->data.create.fields[0].type, TYPE_BOOL_ARRAY);
+    free_command(cmd, 0);
+}
+
+Test(parse_create, string_array_field) {
+    Command* cmd = parse_command("CREATE mydb (string[] tags)");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_CREATE);
+    cr_assert_eq(cmd->data.create.fields[0].type, TYPE_STRING_ARRAY);
+    free_command(cmd, 0);
+}
+
+Test(parse_add, int_array_value) {
+    Command* cmd = parse_command("ADD mydb 1 ([1, 2, 3])");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ADD);
+    cr_assert_eq(cmd->data.add.valueCount, 1);
+    cr_assert_eq(cmd->data.add.values[0].size, -4);
+    cr_assert_not_null(cmd->data.add.values[0].value.a);
+    cr_assert_eq(cmd->data.add.values[0].value.a->count, 3);
+    cr_assert_eq(cmd->data.add.values[0].value.a->elements[0].value.i, 1);
+    cr_assert_eq(cmd->data.add.values[0].value.a->elements[1].value.i, 2);
+    cr_assert_eq(cmd->data.add.values[0].value.a->elements[2].value.i, 3);
+    free_command(cmd, 0);
+}
+
+Test(parse_add, empty_array_value) {
+    Command* cmd = parse_command("ADD mydb 1 ([])");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ADD);
+    cr_assert_eq(cmd->data.add.values[0].size, -4);
+    free_command(cmd, 0);
+}
+
+Test(parse_add, mixed_type_array_is_error) {
+    Command* cmd = parse_command("ADD mydb 1 ([1, 2.0, 3])");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+    free_command(cmd, 0);
+}
+
+Test(parse_up, array_append_value) {
+    Command* cmd = parse_command("UP mydb 1 ([...+42])");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_UP);
+    cr_assert_eq(cmd->data.update.valueCount, 1);
+    Data* v = &cmd->data.update.values[0];
+    cr_assert_not_null(v->value.a);
+    cr_assert_eq(v->value.a->is_append, 1);
+    cr_assert_eq(v->value.a->append_value.value.i, 42);
+    free_command(cmd, 0);
+}
+
+// ============================================================================
+// Additional array type parsing tests
+// ============================================================================
+
+/* ---- parse_create: multiple / mixed array fields ---- */
+
+Test(parse_create, multiple_array_fields) {
+    Command* cmd = parse_command(
+        "CREATE mydb (int[] scores, double[] prices, bool[] flags, string[] tags)");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_CREATE);
+    cr_assert_eq(cmd->data.create.fieldCount, 4);
+    cr_assert_eq(cmd->data.create.fields[0].type, TYPE_INT_ARRAY);
+    cr_assert_eq(cmd->data.create.fields[1].type, TYPE_DOUBLE_ARRAY);
+    cr_assert_eq(cmd->data.create.fields[2].type, TYPE_BOOL_ARRAY);
+    cr_assert_eq(cmd->data.create.fields[3].type, TYPE_STRING_ARRAY);
+    cr_assert_str_eq(cmd->data.create.fields[0].name, "scores");
+    cr_assert_str_eq(cmd->data.create.fields[1].name, "prices");
+    cr_assert_str_eq(cmd->data.create.fields[2].name, "flags");
+    cr_assert_str_eq(cmd->data.create.fields[3].name, "tags");
+    free_command(cmd, 0);
+}
+
+Test(parse_create, mixed_scalar_and_array_fields) {
+    Command* cmd = parse_command(
+        "CREATE mydb (int age, int[] scores, string name, bool[] flags)");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_CREATE);
+    cr_assert_eq(cmd->data.create.fieldCount, 4);
+    cr_assert_eq(cmd->data.create.fields[0].type, TYPE_INT);
+    cr_assert_eq(cmd->data.create.fields[1].type, TYPE_INT_ARRAY);
+    cr_assert_eq(cmd->data.create.fields[2].type, TYPE_STRING);
+    cr_assert_eq(cmd->data.create.fields[3].type, TYPE_BOOL_ARRAY);
+    free_command(cmd, 0);
+}
+
+/* ---- parse_add: double[], bool[], string[] ---- */
+
+Test(parse_add, double_array_value) {
+    Command* cmd = parse_command("ADD mydb 1 ([1.5, 2.5, 3.0])");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ADD);
+    cr_assert_eq(cmd->data.add.valueCount, 1);
+    Data* d = &cmd->data.add.values[0];
+    cr_assert_eq(d->size, -5);
+    cr_assert_not_null(d->value.a);
+    cr_assert_eq(d->value.a->count, 3);
+    cr_assert_float_eq(d->value.a->elements[0].value.d, 1.5, 1e-9);
+    cr_assert_float_eq(d->value.a->elements[1].value.d, 2.5, 1e-9);
+    cr_assert_float_eq(d->value.a->elements[2].value.d, 3.0, 1e-9);
+    free_command(cmd, 0);
+}
+
+Test(parse_add, bool_array_value) {
+    Command* cmd = parse_command("ADD mydb 1 ([true, false, true])");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ADD);
+    cr_assert_eq(cmd->data.add.valueCount, 1);
+    Data* d = &cmd->data.add.values[0];
+    cr_assert_eq(d->size, -6);
+    cr_assert_not_null(d->value.a);
+    cr_assert_eq(d->value.a->count, 3);
+    cr_assert_eq(d->value.a->elements[0].value.i, 1);
+    cr_assert_eq(d->value.a->elements[1].value.i, 0);
+    cr_assert_eq(d->value.a->elements[2].value.i, 1);
+    free_command(cmd, 0);
+}
+
+Test(parse_add, string_array_value) {
+    Command* cmd = parse_command("ADD mydb 1 ([\"hello\", \"world\"])");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ADD);
+    cr_assert_eq(cmd->data.add.valueCount, 1);
+    Data* d = &cmd->data.add.values[0];
+    cr_assert_eq(d->size, -7);
+    cr_assert_not_null(d->value.a);
+    cr_assert_eq(d->value.a->count, 2);
+    cr_assert_str_eq(d->value.a->elements[0].value.s, "hello");
+    cr_assert_str_eq(d->value.a->elements[1].value.s, "world");
+    free_command(cmd, 0);
+}
+
+Test(parse_add, array_with_internal_whitespace) {
+    /* Spaces inside brackets should be fine */
+    Command* cmd = parse_command("ADD mydb 1 ([ 10 , 20 , 30 ])");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ADD);
+    Data* d = &cmd->data.add.values[0];
+    cr_assert_eq(d->size, -4);
+    cr_assert_eq(d->value.a->count, 3);
+    cr_assert_eq(d->value.a->elements[0].value.i, 10);
+    cr_assert_eq(d->value.a->elements[2].value.i, 30);
+    free_command(cmd, 0);
+}
+
+Test(parse_add, array_single_element) {
+    Command* cmd = parse_command("ADD mydb 1 ([42])");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ADD);
+    Data* d = &cmd->data.add.values[0];
+    cr_assert_eq(d->size, -4);
+    cr_assert_eq(d->value.a->count, 1);
+    cr_assert_eq(d->value.a->elements[0].value.i, 42);
+    free_command(cmd, 0);
+}
+
+Test(parse_add, array_negative_ints) {
+    Command* cmd = parse_command("ADD mydb 1 ([-1, -2, -3])");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ADD);
+    Data* d = &cmd->data.add.values[0];
+    cr_assert_eq(d->size, -4);
+    cr_assert_eq(d->value.a->count, 3);
+    cr_assert_eq(d->value.a->elements[0].value.i, -1);
+    cr_assert_eq(d->value.a->elements[2].value.i, -3);
+    free_command(cmd, 0);
+}
+
+Test(parse_add, array_negative_doubles) {
+    Command* cmd = parse_command("ADD mydb 1 ([-1.1, -2.2])");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ADD);
+    Data* d = &cmd->data.add.values[0];
+    cr_assert_eq(d->size, -5);
+    cr_assert_eq(d->value.a->count, 2);
+    cr_assert_float_eq(d->value.a->elements[0].value.d, -1.1, 1e-9);
+    free_command(cmd, 0);
+}
+
+Test(parse_add, multiple_arrays_in_one_add) {
+    Command* cmd = parse_command("ADD mydb 1 ([1, 2], [true, false])");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ADD);
+    cr_assert_eq(cmd->data.add.valueCount, 2);
+    cr_assert_eq(cmd->data.add.values[0].size, -4);
+    cr_assert_eq(cmd->data.add.values[1].size, -6);
+    cr_assert_eq(cmd->data.add.values[0].value.a->count, 2);
+    cr_assert_eq(cmd->data.add.values[1].value.a->count, 2);
+    free_command(cmd, 0);
+}
+
+Test(parse_add, array_mixed_with_scalar) {
+    Command* cmd = parse_command("ADD mydb 1 ([10, 20], \"alice\")");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ADD);
+    cr_assert_eq(cmd->data.add.valueCount, 2);
+    cr_assert_eq(cmd->data.add.values[0].size, -4);
+    cr_assert_eq(cmd->data.add.values[0].value.a->count, 2);
+    /* second value is string */
+    cr_assert_str_eq(cmd->data.add.values[1].value.s, "alice");
+    free_command(cmd, 0);
+}
+
+/* ---- parse_up: array replace + append for all types ---- */
+
+Test(parse_up, double_array_replace) {
+    Command* cmd = parse_command("UP mydb 1 ([1.1, 2.2, 3.3])");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_UP);
+    Data* v = &cmd->data.update.values[0];
+    cr_assert_eq(v->size, -5);
+    cr_assert_not_null(v->value.a);
+    cr_assert_eq(v->value.a->count, 3);
+    cr_assert_eq(v->value.a->is_append, 0);
+    cr_assert_float_eq(v->value.a->elements[0].value.d, 1.1, 1e-9);
+    free_command(cmd, 0);
+}
+
+Test(parse_up, bool_array_replace) {
+    Command* cmd = parse_command("UP mydb 1 ([false, true])");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_UP);
+    Data* v = &cmd->data.update.values[0];
+    cr_assert_eq(v->size, -6);
+    cr_assert_not_null(v->value.a);
+    cr_assert_eq(v->value.a->count, 2);
+    cr_assert_eq(v->value.a->elements[0].value.i, 0);
+    cr_assert_eq(v->value.a->elements[1].value.i, 1);
+    free_command(cmd, 0);
+}
+
+Test(parse_up, string_array_replace) {
+    Command* cmd = parse_command("UP mydb 1 ([\"foo\", \"bar\"])");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_UP);
+    Data* v = &cmd->data.update.values[0];
+    cr_assert_eq(v->size, -7);
+    cr_assert_not_null(v->value.a);
+    cr_assert_eq(v->value.a->count, 2);
+    cr_assert_str_eq(v->value.a->elements[0].value.s, "foo");
+    cr_assert_str_eq(v->value.a->elements[1].value.s, "bar");
+    free_command(cmd, 0);
+}
+
+Test(parse_up, double_array_append) {
+    Command* cmd = parse_command("UP mydb 1 ([...+3.14])");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_UP);
+    Data* v = &cmd->data.update.values[0];
+    cr_assert_not_null(v->value.a);
+    cr_assert_eq(v->value.a->is_append, 1);
+    cr_assert_float_eq(v->value.a->append_value.value.d, 3.14, 1e-9);
+    free_command(cmd, 0);
+}
+
+Test(parse_up, bool_array_append) {
+    Command* cmd = parse_command("UP mydb 1 ([...+true])");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_UP);
+    Data* v = &cmd->data.update.values[0];
+    cr_assert_not_null(v->value.a);
+    cr_assert_eq(v->value.a->is_append, 1);
+    cr_assert_eq(v->value.a->append_value.value.i, 1);
+    free_command(cmd, 0);
+}
+
+Test(parse_up, string_array_append) {
+    Command* cmd = parse_command("UP mydb 1 ([...+\"tag\"])");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_UP);
+    Data* v = &cmd->data.update.values[0];
+    cr_assert_not_null(v->value.a);
+    cr_assert_eq(v->value.a->is_append, 1);
+    cr_assert_str_eq(v->value.a->append_value.value.s, "tag");
+    free_command(cmd, 0);
+}
+
+Test(parse_up, array_with_ignore_in_multi_field) {
+    /* UP mydb 1 (_, [10, 20]) — first field ignored, second is array */
+    Command* cmd = parse_command("UP mydb 1 (_, [10, 20])");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_UP);
+    cr_assert_eq(cmd->data.update.valueCount, 2);
+    /* first value: ignore marker */
+    cr_assert_eq(cmd->data.update.ignoreFlags[0], 1);
+    /* second value: int array */
+    Data* v = &cmd->data.update.values[1];
+    cr_assert_eq(v->size, -4);
+    cr_assert_eq(v->value.a->count, 2);
+    free_command(cmd, 0);
+}
+
+Test(parse_up, empty_array_replace) {
+    Command* cmd = parse_command("UP mydb 1 ([])");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_UP);
+    Data* v = &cmd->data.update.values[0];
+    cr_assert_eq(v->size, -4);
+    cr_assert_eq(v->value.a->count, 0);
+    free_command(cmd, 0);
+}

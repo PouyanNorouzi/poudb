@@ -11,7 +11,7 @@
 
 #define SNAPSHOT_MAGIC       "PDBSNAP"
 #define SNAPSHOT_MAGIC_SIZE  7
-#define SNAPSHOT_VERSION     2U
+#define SNAPSHOT_VERSION     3U
 #define NULL_STRING_SENTINEL UINT32_MAX
 #define DEFAULT_SNAPSHOT     "poudb.snapshot"
 
@@ -183,7 +183,7 @@ int persistence_load_all(const char* snapshotPath) {
 
     uint32_t version;
     if(read_u32(fp, &version) != 0 ||
-       (version != 1U && version != SNAPSHOT_VERSION)) {
+       (version != 1U && version != 2U && version != SNAPSHOT_VERSION)) {
         fclose(fp);
         return -1; /* Version mismatch; cannot load. */
     }
@@ -488,6 +488,50 @@ static int write_row_values(FILE* fp, DB* db, Row* row) {
                     return -1;
                 }
                 break;
+            case TYPE_INT_ARRAY:
+            case TYPE_DOUBLE_ARRAY:
+            case TYPE_BOOL_ARRAY:
+            case TYPE_STRING_ARRAY: {
+                uint32_t count;
+                if(write_u32(fp, v->value.a ? (uint32_t)v->value.a->count : 0U) != 0) {
+                    return -1;
+                }
+                if(v->value.a == NULL || v->value.a->count == 0) {
+                    break;
+                }
+                FieldType elemType = (type == TYPE_INT_ARRAY)    ? TYPE_INT
+                                   : (type == TYPE_DOUBLE_ARRAY) ? TYPE_DOUBLE
+                                   : (type == TYPE_BOOL_ARRAY)   ? TYPE_BOOL
+                                                                 : TYPE_STRING;
+                count = (uint32_t)v->value.a->count;
+                for(uint32_t ei = 0; ei < count; ei++) {
+                    Data* e = &v->value.a->elements[ei];
+                    switch(elemType) {
+                        case TYPE_INT:
+                            if(write_i32(fp, (int32_t)e->value.i) != 0) {
+                                return -1;
+                            }
+                            break;
+                        case TYPE_DOUBLE:
+                            if(write_f64(fp, e->value.d) != 0) {
+                                return -1;
+                            }
+                            break;
+                        case TYPE_BOOL:
+                            if(write_u8(fp, (uint8_t)(e->value.b ? 1 : 0)) != 0) {
+                                return -1;
+                            }
+                            break;
+                        case TYPE_STRING:
+                            if(write_string(fp, e->value.s) != 0) {
+                                return -1;
+                            }
+                            break;
+                        default: return -1;
+                    }
+                }
+                break;
+            }
             default: return -1;
         }
     }
@@ -580,7 +624,7 @@ static int read_field_definitions(FILE*    fp,
         }
         fields[i].name[fieldLen] = '\0';
 
-        if(read_u8(fp, &type) != 0 || type > TYPE_STRING) {
+        if(read_u8(fp, &type) != 0 || type > TYPE_STRING_ARRAY) {
             free(fields);
             return -1;
         }
@@ -600,6 +644,21 @@ static void free_pending_values(Data*    values,
     for(uint32_t i = 0; i < readCount; i++) {
         if(fields[i].type == TYPE_STRING && values[i].value.s != NULL) {
             free((void*)values[i].value.s);
+        } else if((fields[i].type == TYPE_INT_ARRAY ||
+                   fields[i].type == TYPE_DOUBLE_ARRAY ||
+                   fields[i].type == TYPE_BOOL_ARRAY ||
+                   fields[i].type == TYPE_STRING_ARRAY) &&
+                  values[i].value.a != NULL) {
+            ArrayData* arr = values[i].value.a;
+            if(arr->elements != NULL) {
+                if(fields[i].type == TYPE_STRING_ARRAY) {
+                    for(int k = 0; k < arr->count; k++) {
+                        free((void*)arr->elements[k].value.s);
+                    }
+                }
+                free(arr->elements);
+            }
+            free(arr);
         }
     }
 }
@@ -667,6 +726,118 @@ static int read_row_values(FILE*    fp,
                     valuesOut[i].size    = (int)strlen(s);
                     valuesOut[i].value.s = s;
                 }
+                break;
+            }
+            case TYPE_INT_ARRAY:
+            case TYPE_DOUBLE_ARRAY:
+            case TYPE_BOOL_ARRAY:
+            case TYPE_STRING_ARRAY: {
+                uint32_t count;
+                if(read_u32(fp, &count) != 0) {
+                    free_pending_values(valuesOut, &db->fields[1], fieldCount, i);
+                    return -1;
+                }
+                if(count > MAX_ARRAY_LENGTH) {
+                    free_pending_values(valuesOut, &db->fields[1], fieldCount, i);
+                    return -1;
+                }
+                ArrayData* arr = (ArrayData*)malloc(sizeof(ArrayData));
+                if(arr == NULL) {
+                    free_pending_values(valuesOut, &db->fields[1], fieldCount, i);
+                    return -1;
+                }
+                arr->count     = (int)count;
+                arr->is_append = 0;
+                arr->elements  = NULL;
+                if(count > 0) {
+                    arr->elements = (Data*)malloc(sizeof(Data) * (size_t)count);
+                    if(arr->elements == NULL) {
+                        free(arr);
+                        free_pending_values(valuesOut, &db->fields[1], fieldCount, i);
+                        return -1;
+                    }
+                }
+                FieldType elemType = (type == TYPE_INT_ARRAY)    ? TYPE_INT
+                                   : (type == TYPE_DOUBLE_ARRAY) ? TYPE_DOUBLE
+                                   : (type == TYPE_BOOL_ARRAY)   ? TYPE_BOOL
+                                                                 : TYPE_STRING;
+                for(uint32_t ei = 0; ei < count; ei++) {
+                    switch(elemType) {
+                        case TYPE_INT: {
+                            int32_t v;
+                            if(read_i32(fp, &v) != 0) {
+                                /* Free already-decoded string elements */
+                                if(elemType == TYPE_STRING) {
+                                    for(uint32_t k = 0; k < ei; k++) {
+                                        free((void*)arr->elements[k].value.s);
+                                    }
+                                }
+                                free(arr->elements);
+                                free(arr);
+                                free_pending_values(valuesOut, &db->fields[1], fieldCount, i);
+                                return -1;
+                            }
+                            arr->elements[ei].size    = -2;
+                            arr->elements[ei].value.i = (int)v;
+                            break;
+                        }
+                        case TYPE_DOUBLE: {
+                            double v;
+                            if(read_f64(fp, &v) != 0) {
+                                free(arr->elements);
+                                free(arr);
+                                free_pending_values(valuesOut, &db->fields[1], fieldCount, i);
+                                return -1;
+                            }
+                            arr->elements[ei].size    = -1;
+                            arr->elements[ei].value.d = v;
+                            break;
+                        }
+                        case TYPE_BOOL: {
+                            uint8_t v;
+                            if(read_u8(fp, &v) != 0) {
+                                free(arr->elements);
+                                free(arr);
+                                free_pending_values(valuesOut, &db->fields[1], fieldCount, i);
+                                return -1;
+                            }
+                            arr->elements[ei].size    = -3;
+                            arr->elements[ei].value.b = (v != 0);
+                            break;
+                        }
+                        case TYPE_STRING: {
+                            char* s = read_string(fp);
+                            if(s == NULL) {
+                                for(uint32_t k = 0; k < ei; k++) {
+                                    free((void*)arr->elements[k].value.s);
+                                }
+                                free(arr->elements);
+                                free(arr);
+                                free_pending_values(valuesOut, &db->fields[1], fieldCount, i);
+                                return -1;
+                            }
+                            if(s == (char*)-1) {
+                                arr->elements[ei].size    = 0;
+                                arr->elements[ei].value.s = NULL;
+                            } else {
+                                arr->elements[ei].size    = (int)strlen(s);
+                                arr->elements[ei].value.s = s;
+                            }
+                            break;
+                        }
+                        default:
+                            free(arr->elements);
+                            free(arr);
+                            free_pending_values(valuesOut, &db->fields[1], fieldCount, i);
+                            return -1;
+                    }
+                }
+                int sizeTag = (type == TYPE_INT_ARRAY)    ? -4
+                            : (type == TYPE_DOUBLE_ARRAY) ? -5
+                            : (type == TYPE_BOOL_ARRAY)   ? -6
+                                                          : -7;
+                valuesOut[i].size    = sizeTag;
+                valuesOut[i].value.a = arr;
                 break;
             }
             default:

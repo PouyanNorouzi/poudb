@@ -53,6 +53,7 @@ static char* format_search_results(DB*    db,
 static Row** collect_rows(DB* db, int* rowCount);
 static int   find_field_index(DB* db, const char* fieldName);
 static int   compare_values(Data* a, Data* b, FieldType type);
+static char* array_value_to_str(Data* val, FieldType type);
 static void  build_table_header(char** ptr,
                                 DB*    db,
                                 int*   fieldIndices,
@@ -461,11 +462,35 @@ static CommandResult* execute_up(UpdateData* data) {
 
         int valid = 0;
         switch(expectedType) {
-            case TYPE_INT:    valid = (singleValue.size == -2); break;
-            case TYPE_DOUBLE: valid = (singleValue.size == -1); break;
-            case TYPE_BOOL:   valid = (singleValue.size == -3); break;
-            case TYPE_STRING: valid = (singleValue.size >= 0); break;
-            default:          valid = 0;
+            case TYPE_INT:          valid = (singleValue.size == -2); break;
+            case TYPE_DOUBLE:       valid = (singleValue.size == -1); break;
+            case TYPE_BOOL:         valid = (singleValue.size == -3); break;
+            case TYPE_STRING:       valid = (singleValue.size >= 0); break;
+            case TYPE_INT_ARRAY:
+                valid = (singleValue.size == -4) ||
+                        (singleValue.value.a != NULL &&
+                         singleValue.value.a->is_append == 1 &&
+                         singleValue.value.a->append_value.size == -2);
+                break;
+            case TYPE_DOUBLE_ARRAY:
+                valid = (singleValue.size == -4 || singleValue.size == -5) ||
+                        (singleValue.value.a != NULL &&
+                         singleValue.value.a->is_append == 1 &&
+                         singleValue.value.a->append_value.size == -1);
+                break;
+            case TYPE_BOOL_ARRAY:
+                valid = (singleValue.size == -4 || singleValue.size == -6) ||
+                        (singleValue.value.a != NULL &&
+                         singleValue.value.a->is_append == 1 &&
+                         singleValue.value.a->append_value.size == -3);
+                break;
+            case TYPE_STRING_ARRAY:
+                valid = (singleValue.size == -4 || singleValue.size == -7) ||
+                        (singleValue.value.a != NULL &&
+                         singleValue.value.a->is_append == 1 &&
+                         singleValue.value.a->append_value.size >= 0);
+                break;
+            default: valid = 0;
         }
 
         if(!valid) {
@@ -498,6 +523,8 @@ static CommandResult* execute_up(UpdateData* data) {
         } else if(update_result == -4) {
             result->message =
                 EXECUTION_ERROR_MESSAGES[EX_MEMORY_ALLOCATION_FAILED];
+        } else if(update_result == -5) {
+            result->message = EXECUTION_ERROR_MESSAGES[EX_LIMIT_EXCEEDED];
         } else {
             result->message = EXECUTION_ERROR_MESSAGES[EX_UNKNOWN_ERROR];
         }
@@ -880,6 +907,17 @@ static CommandResult* execute_create_index(CreateIndexData* data) {
         return result;
     }
 
+    /* Array fields cannot be indexed */
+    FieldType ft = db->fields[fieldIdx].type;
+    if(ft == TYPE_INT_ARRAY || ft == TYPE_DOUBLE_ARRAY ||
+       ft == TYPE_BOOL_ARRAY || ft == TYPE_STRING_ARRAY) {
+        log_debug("CREATE_INDEX: field '%s' is an array type, not indexable",
+                  data->fieldName);
+        result->code    = -1;
+        result->message = EXECUTION_ERROR_MESSAGES[EX_TYPE_MISMATCH];
+        return result;
+    }
+
     log_debug("CREATE_INDEX: building index on field '%s' (idx=%d) in '%s'",
               data->fieldName, fieldIdx, data->dbName);
     int createResult = db_create_index(db, fieldIdx);
@@ -959,6 +997,67 @@ static int validate_value_types(DB* db, Data* values, int valueCount) {
                     log_warn("String value too long at field '%s': %d > %d",
                             db->fields[fieldIdx].name,
                             val->size, MAX_STRING_VALUE_LENGTH);
+                    return -2;
+                }
+                break;
+
+            case TYPE_INT_ARRAY:
+                // size == -4 is valid (int[] or empty array)
+                if(val->size != -4) {
+                    log_warn("Type mismatch at field '%s': expected int[]",
+                            db->fields[fieldIdx].name);
+                    return -1;
+                }
+                if(val->value.a != NULL &&
+                   val->value.a->count > MAX_ARRAY_LENGTH) {
+                    log_warn("Array too long at field '%s': %d > %d",
+                            db->fields[fieldIdx].name,
+                            val->value.a->count, MAX_ARRAY_LENGTH);
+                    return -2;
+                }
+                break;
+
+            case TYPE_DOUBLE_ARRAY:
+                if(val->size != -5 && val->size != -4) {
+                    log_warn("Type mismatch at field '%s': expected double[]",
+                            db->fields[fieldIdx].name);
+                    return -1;
+                }
+                if(val->value.a != NULL &&
+                   val->value.a->count > MAX_ARRAY_LENGTH) {
+                    log_warn("Array too long at field '%s': %d > %d",
+                            db->fields[fieldIdx].name,
+                            val->value.a->count, MAX_ARRAY_LENGTH);
+                    return -2;
+                }
+                break;
+
+            case TYPE_BOOL_ARRAY:
+                if(val->size != -6 && val->size != -4) {
+                    log_warn("Type mismatch at field '%s': expected bool[]",
+                            db->fields[fieldIdx].name);
+                    return -1;
+                }
+                if(val->value.a != NULL &&
+                   val->value.a->count > MAX_ARRAY_LENGTH) {
+                    log_warn("Array too long at field '%s': %d > %d",
+                            db->fields[fieldIdx].name,
+                            val->value.a->count, MAX_ARRAY_LENGTH);
+                    return -2;
+                }
+                break;
+
+            case TYPE_STRING_ARRAY:
+                if(val->size != -7 && val->size != -4) {
+                    log_warn("Type mismatch at field '%s': expected string[]",
+                            db->fields[fieldIdx].name);
+                    return -1;
+                }
+                if(val->value.a != NULL &&
+                   val->value.a->count > MAX_ARRAY_LENGTH) {
+                    log_warn("Array too long at field '%s': %d > %d",
+                            db->fields[fieldIdx].name,
+                            val->value.a->count, MAX_ARRAY_LENGTH);
                     return -2;
                 }
                 break;
@@ -1046,18 +1145,27 @@ static char* format_row_as_table(DB*    db,
         switch(db->fields[idx].type) {
             case TYPE_INT:
                 snprintf(valueBuf, sizeof(valueBuf), "%d", val->value.i);
-                valLen = strlen(valueBuf);
+                valLen = (int)strlen(valueBuf);
                 break;
             case TYPE_DOUBLE:
                 snprintf(valueBuf, sizeof(valueBuf), "%.6g", val->value.d);
-                valLen = strlen(valueBuf);
+                valLen = (int)strlen(valueBuf);
                 break;
             case TYPE_BOOL:
                 valLen = val->value.b ? 4 : 5;  // "true" or "false"
                 break;
             case TYPE_STRING:
-                valLen = val->value.s ? strlen(val->value.s) : 4;  // "NULL"
+                valLen = val->value.s ? (int)strlen(val->value.s) : 4;  // "NULL"
                 break;
+            case TYPE_INT_ARRAY:
+            case TYPE_DOUBLE_ARRAY:
+            case TYPE_BOOL_ARRAY:
+            case TYPE_STRING_ARRAY: {
+                char* as = array_value_to_str(val, db->fields[idx].type);
+                valLen = as ? (int)strlen(as) : 2;
+                free(as);
+                break;
+            }
             default: valLen = 1;
         }
         if(valLen > colWidths[i]) {
@@ -1170,18 +1278,27 @@ static char* format_rows_as_table(DB* db, char** fields, int fieldCount) {
             switch(db->fields[idx].type) {
                 case TYPE_INT:
                     snprintf(valueBuf, sizeof(valueBuf), "%d", val->value.i);
-                    valLen = strlen(valueBuf);
+                    valLen = (int)strlen(valueBuf);
                     break;
                 case TYPE_DOUBLE:
                     snprintf(valueBuf, sizeof(valueBuf), "%.6g", val->value.d);
-                    valLen = strlen(valueBuf);
+                    valLen = (int)strlen(valueBuf);
                     break;
                 case TYPE_BOOL:
                     valLen = val->value.b ? 4 : 5;  // "true" or "false"
                     break;
                 case TYPE_STRING:
-                    valLen = val->value.s ? strlen(val->value.s) : 4;  // "NULL"
+                    valLen = val->value.s ? (int)strlen(val->value.s) : 4;  // "NULL"
                     break;
+                case TYPE_INT_ARRAY:
+                case TYPE_DOUBLE_ARRAY:
+                case TYPE_BOOL_ARRAY:
+                case TYPE_STRING_ARRAY: {
+                    char* as = array_value_to_str(val, db->fields[idx].type);
+                    valLen = as ? (int)strlen(as) : 2;
+                    free(as);
+                    break;
+                }
                 default: valLen = 1;
             }
             if(valLen > colWidths[i]) {
@@ -1249,6 +1366,77 @@ static Row** collect_rows(DB* db, int* rowCount) {
     return rows;
 }
 
+/**
+ * Format an array Data value as a heap-allocated "[el1, el2, ...]" string.
+ * Returns NULL on allocation failure. Caller must free().
+ */
+static char* array_value_to_str(Data* val, FieldType type) {
+    if(val->value.a == NULL || val->value.a->count == 0) {
+        char* s = (char*)malloc(3);
+        if(s) {
+            strcpy(s, "[]");
+        }
+        return s;
+    }
+
+    ArrayData* arr      = val->value.a;
+    FieldType  elemType = (type == TYPE_INT_ARRAY)    ? TYPE_INT
+                        : (type == TYPE_DOUBLE_ARRAY) ? TYPE_DOUBLE
+                        : (type == TYPE_BOOL_ARRAY)   ? TYPE_BOOL
+                                                      : TYPE_STRING;
+
+    /* Estimate: each element up to 64 chars + ", " */
+    int   cap = arr->count * 66 + 4;
+    char* buf = (char*)malloc((size_t)cap);
+    if(buf == NULL) {
+        return NULL;
+    }
+
+    int pos = 0;
+    buf[pos++] = '[';
+    char tmp[64];
+    for(int i = 0; i < arr->count; i++) {
+        if(i > 0) {
+            buf[pos++] = ',';
+            buf[pos++] = ' ';
+        }
+        Data* e = &arr->elements[i];
+        switch(elemType) {
+            case TYPE_INT:
+                snprintf(tmp, sizeof(tmp), "%d", e->value.i);
+                break;
+            case TYPE_DOUBLE:
+                snprintf(tmp, sizeof(tmp), "%.6g", e->value.d);
+                break;
+            case TYPE_BOOL:
+                strcpy(tmp, e->value.b ? "true" : "false");
+                break;
+            case TYPE_STRING:
+                snprintf(tmp, sizeof(tmp), "%s",
+                         e->value.s ? e->value.s : "NULL");
+                break;
+            default:
+                strcpy(tmp, "?");
+        }
+        int len = (int)strlen(tmp);
+        /* Grow buffer if needed */
+        if(pos + len + 4 >= cap) {
+            cap = cap * 2 + len + 4;
+            char* newbuf = (char*)realloc(buf, (size_t)cap);
+            if(newbuf == NULL) {
+                free(buf);
+                return NULL;
+            }
+            buf = newbuf;
+        }
+        memcpy(buf + pos, tmp, (size_t)len);
+        pos += len;
+    }
+    buf[pos++] = ']';
+    buf[pos]   = '\0';
+    return buf;
+}
+
 static void build_table_header(char** ptr,
                                DB*    db,
                                int*   fieldIndices,
@@ -1308,8 +1496,12 @@ static void build_data_row(char** ptr,
     for(int i = 0; i < numFields; i++) {
         int   idx = fieldIndices[i];
         Data* val = &row->values[idx];
+        FieldType ft = db->fields[idx].type;
 
-        switch(db->fields[idx].type) {
+        const char* str     = valueBuf;
+        char*       arrStr  = NULL;
+
+        switch(ft) {
             case TYPE_INT:
                 snprintf(valueBuf, sizeof(valueBuf), "%d", val->value.i);
                 break;
@@ -1326,15 +1518,22 @@ static void build_data_row(char** ptr,
                     strcpy(valueBuf, "NULL");
                 }
                 break;
+            case TYPE_INT_ARRAY:
+            case TYPE_DOUBLE_ARRAY:
+            case TYPE_BOOL_ARRAY:
+            case TYPE_STRING_ARRAY:
+                arrStr = array_value_to_str(val, ft);
+                str    = arrStr ? arrStr : "[]";
+                break;
             default: strcpy(valueBuf, "?");
         }
 
-        int valLen  = strlen(valueBuf);
+        int valLen  = (int)strlen(str);
         int padding = colWidths[i] - valLen;
 
         **ptr = ' ';
         (*ptr)++;
-        strcpy(*ptr, valueBuf);
+        memcpy(*ptr, str, (size_t)valLen);
         *ptr += valLen;
         for(int j = 0; j < padding; j++) {
             **ptr = ' ';
@@ -1344,6 +1543,8 @@ static void build_data_row(char** ptr,
         (*ptr)++;
         **ptr = '|';
         (*ptr)++;
+
+        free(arrStr);
     }
     **ptr = '\n';
     (*ptr)++;
@@ -1366,6 +1567,25 @@ static int compare_values(Data* a, Data* b, FieldType type) {
                 return 1;
             }
             return strcmp(a->value.s, b->value.s);
+        /* Array "contains" check: b is the scalar search value */
+        case TYPE_INT_ARRAY:
+        case TYPE_DOUBLE_ARRAY:
+        case TYPE_BOOL_ARRAY:
+        case TYPE_STRING_ARRAY: {
+            if(a->value.a == NULL) {
+                return 1;
+            }
+            FieldType elemType = (type == TYPE_INT_ARRAY)    ? TYPE_INT
+                               : (type == TYPE_DOUBLE_ARRAY) ? TYPE_DOUBLE
+                               : (type == TYPE_BOOL_ARRAY)   ? TYPE_BOOL
+                                                             : TYPE_STRING;
+            for(int i = 0; i < a->value.a->count; i++) {
+                if(compare_values(&a->value.a->elements[i], b, elemType) == 0) {
+                    return 0;
+                }
+            }
+            return 1;
+        }
         default: return 1;
     }
 }
@@ -1446,18 +1666,27 @@ static char* format_search_results(DB*    db,
             switch(db->fields[idx].type) {
                 case TYPE_INT:
                     snprintf(valueBuf, sizeof(valueBuf), "%d", val->value.i);
-                    valLen = strlen(valueBuf);
+                    valLen = (int)strlen(valueBuf);
                     break;
                 case TYPE_DOUBLE:
                     snprintf(valueBuf, sizeof(valueBuf), "%.6g", val->value.d);
-                    valLen = strlen(valueBuf);
+                    valLen = (int)strlen(valueBuf);
                     break;
                 case TYPE_BOOL:
                     valLen = val->value.b ? 4 : 5;  // "true" or "false"
                     break;
                 case TYPE_STRING:
-                    valLen = val->value.s ? strlen(val->value.s) : 4;  // "NULL"
+                    valLen = val->value.s ? (int)strlen(val->value.s) : 4;  // "NULL"
                     break;
+                case TYPE_INT_ARRAY:
+                case TYPE_DOUBLE_ARRAY:
+                case TYPE_BOOL_ARRAY:
+                case TYPE_STRING_ARRAY: {
+                    char* as = array_value_to_str(val, db->fields[idx].type);
+                    valLen = as ? (int)strlen(as) : 2;
+                    free(as);
+                    break;
+                }
                 default: valLen = 1;
             }
             if(valLen > colWidths[i]) {

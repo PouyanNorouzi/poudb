@@ -1,4 +1,6 @@
-export type SchemaType = "int" | "double" | "bool" | "string";
+export type ScalarSchemaType = "int" | "double" | "bool" | "string";
+export type ArraySchemaType = "int[]" | "double[]" | "bool[]" | "string[]";
+export type SchemaType = ScalarSchemaType | ArraySchemaType;
 export type KeyRole = "admin" | "readonly";
 
 export interface SchemaField {
@@ -6,8 +8,18 @@ export interface SchemaField {
     type: SchemaType;
 }
 
-export type CommandValue = string | number | boolean;
-export type UpdateValue = CommandValue | "_";
+/** Scalar primitive usable as a field value or array element. */
+export type ScalarValue = string | number | boolean;
+/** A full array value for an array-typed field. */
+export type ArrayValue = ScalarValue[];
+/** Union of all values that can be sent in ADD commands. */
+export type CommandValue = ScalarValue | ArrayValue;
+/** Append a single element to a stored array field. */
+export interface ArrayAppend {
+    arrayAppend: ScalarValue;
+}
+/** Values allowed in UP commands: scalar, array, ignore sentinel, or append. */
+export type UpdateValue = CommandValue | "_" | ArrayAppend;
 
 export interface ParsedTable {
     headers: string[];

@@ -108,6 +108,7 @@ static int  parse_update_value(const char** ptr,
                                Data*        out_value,
                                int*         is_ignored);
 static void free_values_array(Data* values, int count);
+static void free_array_data(ArrayData* arr);
 static void free_fields_array(Field* fields, int count);
 
 /**
@@ -218,12 +219,16 @@ void free_command(Command* cmd, int strings_transferred) {
                 }
                 free(cmd->data.search.returnFields);
             }
-            // Free search value string if present and not transferred
-            // Only free if it's actually a string (size >= 0 indicates string
-            // type)
-            if(!strings_transferred && cmd->data.search.value.size >= 0 &&
-               cmd->data.search.value.value.s != NULL) {
-                free((void*)cmd->data.search.value.value.s);
+            // Free search value: string (size >= 0) or array (size <= -4)
+            if(!strings_transferred) {
+                if(cmd->data.search.value.size >= 0 &&
+                   cmd->data.search.value.value.s != NULL) {
+                    free((void*)cmd->data.search.value.value.s);
+                } else if(cmd->data.search.value.size <= -4 &&
+                          cmd->data.search.value.value.a != NULL) {
+                    free_array_data(cmd->data.search.value.value.a);
+                    cmd->data.search.value.value.a = NULL;
+                }
             }
             break;
 
@@ -2002,15 +2007,34 @@ static int tokenize_args(const char* args_str, char** db_name, char** key_str) {
 /**
  * Free a values array and all allocated strings within it
  * Parser uses: size = -2 for int, -1 for double, 0 for bool, >= 0 for string
- * Note: size = 0 can be both bool and empty string, but bools have value.s =
- * NULL
+ * Handles strings (size >= 0) and arrays (size <= -4).
  */
+static void free_array_data(ArrayData* arr) {
+    if(arr == NULL) return;
+    if(arr->is_append) {
+        if(arr->append_value.size >= 0 && arr->append_value.value.s != NULL) {
+            free((void*)arr->append_value.value.s);
+        }
+    } else if(arr->elements != NULL) {
+        for(int i = 0; i < arr->count; i++) {
+            if(arr->elements[i].size >= 0 &&
+               arr->elements[i].value.s != NULL) {
+                free((void*)arr->elements[i].value.s);
+            }
+        }
+        free(arr->elements);
+    }
+    free(arr);
+}
+
 static void free_values_array(Data* values, int count) {
     if(values == NULL) return;
     for(int v = 0; v < count; v++) {
-        // Free strings: size >= 0 and value.s is not NULL
         if(values[v].size >= 0 && values[v].value.s != NULL) {
             free((void*)values[v].value.s);
+        } else if(values[v].size <= -4 && values[v].value.a != NULL) {
+            free_array_data(values[v].value.a);
+            values[v].value.a = NULL;
         }
     }
 }
@@ -2222,15 +2246,15 @@ static int parse_single_value(const char** ptr, Data* out_value) {
         out_value->value.s = str;
         out_value->size    = slen;
     } else if(strncasecmp(p, "true", 4) == 0 &&
-              (p[4] == ',' || p[4] == ')' || isspace((unsigned char)p[4]) ||
-               p[4] == '\0')) {
+              (p[4] == ',' || p[4] == ')' || p[4] == ']' ||
+               isspace((unsigned char)p[4]) || p[4] == '\0')) {
         // Parse boolean true
         out_value->value.b  = 1;
         out_value->size     = -3;  // Use -3 to indicate bool
         p                  += 4;
     } else if(strncasecmp(p, "false", 5) == 0 &&
-              (p[5] == ',' || p[5] == ')' || isspace((unsigned char)p[5]) ||
-               p[5] == '\0')) {
+              (p[5] == ',' || p[5] == ')' || p[5] == ']' ||
+               isspace((unsigned char)p[5]) || p[5] == '\0')) {
         // Parse boolean false
         out_value->value.b  = 0;
         out_value->size     = -3;  // Use -3 to indicate bool
@@ -2265,6 +2289,108 @@ static int parse_single_value(const char** ptr, Data* out_value) {
             out_value->value.i = intVal;
             out_value->size    = -2;  // Use -2 to indicate int
         }
+    } else if(*p == '[') {
+        /* Array literal or append: [v1,v2,...] or [...+val] */
+        p++; /* consume '[' */
+        p = skip_whitespace(p);
+
+        ArrayData* arr = (ArrayData*)calloc(1, sizeof(ArrayData));
+        if(arr == NULL) {
+            return -1;
+        }
+
+        if(*p == '.' && p[1] == '.' && p[2] == '.' && p[3] == '+') {
+            /* Append mode: [...+val] */
+            p += 4;
+            if(parse_single_value(&p, &arr->append_value) != 0) {
+                free(arr);
+                return -6;
+            }
+            arr->is_append = 1;
+            /* Size tag derived from element scalar type */
+            if(arr->append_value.size == -2)      out_value->size = -4;
+            else if(arr->append_value.size == -1) out_value->size = -5;
+            else if(arr->append_value.size == -3) out_value->size = -6;
+            else                                   out_value->size = -7;
+            p = skip_whitespace(p);
+            if(*p != ']') {
+                free_array_data(arr);
+                return -6;
+            }
+            p++;
+        } else if(*p == ']') {
+            /* Empty array: type unknown, accept for any array field */
+            out_value->size = -4;
+            p++;
+        } else {
+            /* Regular array: parse comma-separated homogeneous elements */
+            int  cap       = 8;
+            int  first_tag = -100; /* sentinel: no element seen yet */
+
+            arr->elements = (Data*)malloc(sizeof(Data) * (size_t)cap);
+            if(arr->elements == NULL) {
+                free(arr);
+                return -1;
+            }
+
+            while(1) {
+                if(arr->count >= MAX_ARRAY_LENGTH) {
+                    free_array_data(arr);
+                    return -6;
+                }
+                if(arr->count >= cap) {
+                    cap *= 2;
+                    Data* tmp = (Data*)realloc(arr->elements,
+                                               sizeof(Data) * (size_t)cap);
+                    if(tmp == NULL) {
+                        free_array_data(arr);
+                        return -1;
+                    }
+                    arr->elements = tmp;
+                }
+
+                p = skip_whitespace(p);
+                Data elem;
+                memset(&elem, 0, sizeof(Data));
+                if(parse_single_value(&p, &elem) != 0) {
+                    free_array_data(arr);
+                    return -6;
+                }
+
+                /* Normalise type tag: strings (size>=0) map to 0 */
+                int tag = (elem.size >= 0) ? 0 : elem.size;
+                if(first_tag == -100) {
+                    first_tag = tag;
+                } else if(first_tag != tag) {
+                    if(elem.size >= 0 && elem.value.s != NULL) {
+                        free((void*)elem.value.s);
+                    }
+                    free_array_data(arr);
+                    return -6; /* mixed types */
+                }
+
+                arr->elements[arr->count++] = elem;
+
+                p = skip_whitespace(p);
+                if(*p == ',') {
+                    p++;
+                } else if(*p == ']') {
+                    p++;
+                    break;
+                } else {
+                    free_array_data(arr);
+                    return -6;
+                }
+            }
+
+            /* Derive size tag from element type */
+            if(first_tag == -2)      out_value->size = -4; /* int[]    */
+            else if(first_tag == -1) out_value->size = -5; /* double[] */
+            else if(first_tag == -3) out_value->size = -6; /* bool[]   */
+            else                     out_value->size = -7; /* string[] */
+        }
+
+        out_value->value.a = arr;
     } else {
         return -6;  // Invalid value
     }
@@ -2293,13 +2419,20 @@ static int tokenize_values(const char* values_str,
     int         count      = 0;
     int         hasContent = 0;
     int         inString   = 0;
+    int         inBracket  = 0;
 
     while(*p) {
         if(*p == '"') {
             inString   = !inString;
             hasContent = 1;
         } else if(!inString) {
-            if(*p == ',') {
+            if(*p == '[') {
+                inBracket++;
+                hasContent = 1;
+            } else if(*p == ']') {
+                if(inBracket > 0) inBracket--;
+                hasContent = 1;
+            } else if(*p == ',' && !inBracket) {
                 count++;
             } else if(!isspace((unsigned char)*p)) {
                 hasContent = 1;
@@ -2379,7 +2512,7 @@ static int parse_update_value(const char** ptr,
     const char* p = skip_whitespace(*ptr);
 
     out_value->size    = 0;
-    out_value->value.i = 0;
+    out_value->value.a = NULL;  /* zero full union width */
     *is_ignored        = 0;
 
     // Check for ignore marker '_'
@@ -2414,13 +2547,20 @@ static int tokenize_update_values(const char* values_str,
     int         count      = 0;
     int         hasContent = 0;
     int         inString   = 0;
+    int         inBracket  = 0;
 
     while(*p) {
         if(*p == '"') {
             inString   = !inString;
             hasContent = 1;
         } else if(!inString) {
-            if(*p == ',') {
+            if(*p == '[') {
+                inBracket++;
+                hasContent = 1;
+            } else if(*p == ']') {
+                if(inBracket > 0) inBracket--;
+                hasContent = 1;
+            } else if(*p == ',' && !inBracket) {
                 count++;
             } else if(!isspace((unsigned char)*p)) {
                 hasContent = 1;
@@ -2456,7 +2596,7 @@ static int tokenize_update_values(const char* values_str,
     // Initialize values and flags
     for(int v = 0; v < count; v++) {
         (*values)[v].size    = 0;
-        (*values)[v].value.i = 0;
+        (*values)[v].value.a = NULL;  /* zero full union width */
         (*ignore_flags)[v]   = 0;
     }
 
@@ -2515,6 +2655,18 @@ static int parse_field_type(const char* typeStr, FieldType* outType) {
         return 0;
     } else if(strcasecmp(typeStr, "string") == 0) {
         *outType = TYPE_STRING;
+        return 0;
+    } else if(strcasecmp(typeStr, "int[]") == 0) {
+        *outType = TYPE_INT_ARRAY;
+        return 0;
+    } else if(strcasecmp(typeStr, "double[]") == 0) {
+        *outType = TYPE_DOUBLE_ARRAY;
+        return 0;
+    } else if(strcasecmp(typeStr, "bool[]") == 0) {
+        *outType = TYPE_BOOL_ARRAY;
+        return 0;
+    } else if(strcasecmp(typeStr, "string[]") == 0) {
+        *outType = TYPE_STRING_ARRAY;
         return 0;
     }
     return -1;
