@@ -10,7 +10,8 @@ export function newDbName(): string {
 }
 
 export async function createConnectedClient(): Promise<PoudbClient> {
-    const client = new PoudbClient();
+    const key = process.env.POUDB_AUTH_TOKEN;
+    const client = new PoudbClient({ key });
     await client.connect();
     return client;
 }
