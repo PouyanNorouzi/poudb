@@ -1401,6 +1401,26 @@ static char* array_value_to_str(Data* val, FieldType type) {
             buf[pos++] = ' ';
         }
         Data* e = &arr->elements[i];
+        if(elemType == TYPE_STRING) {
+            const char* sv     = e->value.s ? e->value.s : "NULL";
+            int         sv_len = (int)strlen(sv);
+            /* Need room for: 2 quotes + sv_len + possible ", " + ']' + '\0' */
+            if(pos + sv_len + 6 >= cap) {
+                cap          = cap * 2 + sv_len + 6;
+                char* newbuf = (char*)realloc(buf, (size_t)cap);
+                if(newbuf == NULL) {
+                    free(buf);
+                    return NULL;
+                }
+                buf = newbuf;
+            }
+            buf[pos++] = '"';
+            memcpy(buf + pos, sv, (size_t)sv_len);
+            pos += sv_len;
+            buf[pos++] = '"';
+            buf[pos]   = '\0';
+            continue;
+        }
         switch(elemType) {
             case TYPE_INT:
                 snprintf(tmp, sizeof(tmp), "%d", e->value.i);
@@ -1410,10 +1430,6 @@ static char* array_value_to_str(Data* val, FieldType type) {
                 break;
             case TYPE_BOOL:
                 strcpy(tmp, e->value.b ? "true" : "false");
-                break;
-            case TYPE_STRING:
-                snprintf(tmp, sizeof(tmp), "%s",
-                         e->value.s ? e->value.s : "NULL");
                 break;
             default:
                 strcpy(tmp, "?");
