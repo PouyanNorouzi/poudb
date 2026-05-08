@@ -17,15 +17,15 @@ import {
     buildUp,
     buildWhoami,
 } from "./protocol/commands.js";
-import { assertCode, assertTable } from "./operations.js";
+import { assertCode, assertTypedTable } from "./operations.js";
 import {
     ClientOptions,
     CommandResponse,
     CommandValue,
     KeyRole,
-    ParsedTable,
-    QueryResult,
     SchemaField,
+    SchemaToRow,
+    TypedTable,
     UpdateValue,
 } from "./types.js";
 
@@ -95,9 +95,25 @@ export class PoudbClient {
         return assertCode(response);
     }
 
-    public async get(db: string, key: number, fields?: string[]): Promise<QueryResult<ParsedTable>> {
-        const response = await this.sendRaw(buildGet(db, key, fields));
-        return assertTable(response);
+    public async get(
+        db: string,
+        key: number,
+        opts?: { fields?: string[] },
+    ): Promise<TypedTable<Record<string, string>>>;
+    public async get<S extends readonly SchemaField[]>(
+        db: string,
+        key: number,
+        opts: { fields?: string[]; schema: S },
+    ): Promise<TypedTable<SchemaToRow<S>>>;
+    public async get<S extends readonly SchemaField[]>(
+        db: string,
+        key: number,
+        opts?: { fields?: string[]; schema?: S },
+    ): Promise<TypedTable<SchemaToRow<S>> | TypedTable<Record<string, string>>> {
+        const response = await this.sendRaw(buildGet(db, key, opts?.fields));
+        return opts?.schema !== undefined
+            ? assertTypedTable(response, opts.schema)
+            : assertTypedTable(response);
     }
 
     public async del(db: string, key: number): Promise<number> {
@@ -105,19 +121,46 @@ export class PoudbClient {
         return assertCode(response);
     }
 
-    public async getAll(db: string, fields?: string[]): Promise<QueryResult<ParsedTable>> {
-        const response = await this.sendRaw(buildGetAll(db, fields));
-        return assertTable(response);
+    public async getAll(
+        db: string,
+        opts?: { fields?: string[] },
+    ): Promise<TypedTable<Record<string, string>>>;
+    public async getAll<S extends readonly SchemaField[]>(
+        db: string,
+        opts: { fields?: string[]; schema: S },
+    ): Promise<TypedTable<SchemaToRow<S>>>;
+    public async getAll<S extends readonly SchemaField[]>(
+        db: string,
+        opts?: { fields?: string[]; schema?: S },
+    ): Promise<TypedTable<SchemaToRow<S>> | TypedTable<Record<string, string>>> {
+        const response = await this.sendRaw(buildGetAll(db, opts?.fields));
+        return opts?.schema !== undefined
+            ? assertTypedTable(response, opts.schema)
+            : assertTypedTable(response);
     }
 
     public async search(
         db: string,
         field: string,
         value: string | number | boolean,
-        returnFields?: string[],
-    ): Promise<QueryResult<ParsedTable>> {
-        const response = await this.sendRaw(buildSearch(db, field, value, returnFields));
-        return assertTable(response);
+        opts?: { fields?: string[] },
+    ): Promise<TypedTable<Record<string, string>>>;
+    public async search<S extends readonly SchemaField[]>(
+        db: string,
+        field: string,
+        value: string | number | boolean,
+        opts: { fields?: string[]; schema: S },
+    ): Promise<TypedTable<SchemaToRow<S>>>;
+    public async search<S extends readonly SchemaField[]>(
+        db: string,
+        field: string,
+        value: string | number | boolean,
+        opts?: { fields?: string[]; schema?: S },
+    ): Promise<TypedTable<SchemaToRow<S>> | TypedTable<Record<string, string>>> {
+        const response = await this.sendRaw(buildSearch(db, field, value, opts?.fields));
+        return opts?.schema !== undefined
+            ? assertTypedTable(response, opts.schema)
+            : assertTypedTable(response);
     }
 
     public async count(db: string): Promise<number> {
@@ -170,9 +213,9 @@ export class PoudbClient {
     }
 
     /** List all auth keys as a table (admin only). */
-    public async listKeys(): Promise<QueryResult<ParsedTable>> {
+    public async listKeys(): Promise<TypedTable<Record<string, string>>> {
         const response = await this.sendRaw(buildListKeys());
-        return assertTable(response);
+        return assertTypedTable(response);
     }
 
     /** Return the name of the authenticated key for this connection. */

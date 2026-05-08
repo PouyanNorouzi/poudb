@@ -27,6 +27,31 @@ export interface ParsedTable {
     raw: string;
 }
 
+/** Maps a SchemaType string to its JavaScript runtime type. */
+export type SchemaTypeToJS<T extends SchemaType> =
+    T extends "int" | "double" ? number
+    : T extends "bool" ? boolean
+    : T extends "string" ? string
+    : T extends "int[]" | "double[]" ? number[]
+    : T extends "bool[]" ? boolean[]
+    : T extends "string[]" ? string[]
+    : never;
+
+/** Maps a readonly SchemaField array to a typed row object. */
+export type SchemaToRow<T extends readonly SchemaField[]> = {
+    [K in T[number] as K["name"]]: SchemaTypeToJS<K["type"]>;
+} & { key: number; time_created: number; time_updated: number };
+
+/**
+ * Flat typed result returned by table-returning operations.
+ * Replaces QueryResult<ParsedTable> in the high-level client API.
+ */
+export interface TypedTable<T> {
+    headers: string[];
+    rows: T[];
+    raw: string;
+}
+
 export interface CodeResponse {
     kind: "code";
     raw: string;

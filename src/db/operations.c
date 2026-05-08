@@ -255,17 +255,14 @@ CommandResult* execute_list_keys(void) {
     }
 
     int n = 0;
-    n += snprintf(buf + n, (size_t)(buf_size - n),
-                  "%-63s | role\n", "name");
-    n += snprintf(buf + n, (size_t)(buf_size - n),
-                  "%-63s-+----------\n",
-                  "----------------------------------------------------------------");
+    n += snprintf(buf + n, (size_t)(buf_size - n), "| name | role |\n");
+    n += snprintf(buf + n, (size_t)(buf_size - n), "| - | - |\n");
 
     for(int i = 0; i < g_auth_store.count && n < buf_size - 1; i++) {
         const char* role_str =
             (g_auth_store.keys[i].role == ROLE_ADMIN) ? "admin" : "readonly";
         n += snprintf(buf + n, (size_t)(buf_size - n),
-                      "%-63s | %s\n",
+                      "| %s | %s |\n",
                       g_auth_store.keys[i].name,
                       role_str);
     }

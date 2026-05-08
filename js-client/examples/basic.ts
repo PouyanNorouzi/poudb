@@ -14,7 +14,7 @@ async function main(): Promise<void> {
     const all = await client.getAll(db);
 
     console.log("Inserted key:", key);
-    console.log("Rows:", all.data.rows);
+    console.log("Rows:", all.rows);
 
     await client.disconnect();
 }

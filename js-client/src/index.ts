@@ -7,7 +7,7 @@ export {
     RequestTimeoutError,
     ServerMessageError,
 } from "./errors.js";
-export { parseTable } from "./parsers/table.js";
+export { parseTable, coerceTable, coerceValue } from "./parsers/table.js";
 export {
     buildAdd,
     buildAddKey,
@@ -40,7 +40,10 @@ export type {
     ScalarSchemaType,
     ScalarValue,
     SchemaField,
+    SchemaToRow,
     SchemaType,
+    SchemaTypeToJS,
     TableResponse,
+    TypedTable,
     UpdateValue,
 } from "./types.js";

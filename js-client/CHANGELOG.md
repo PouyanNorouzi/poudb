@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.5.0
+
+### Breaking changes
+
+- `get()`, `getAll()`, `search()`, and `listKeys()` now return `TypedTable<T>` (`{ headers, rows, raw }`) instead of `QueryResult<ParsedTable>` (`{ raw, data: { headers, rows } }`). Update all access from `.data.rows` / `.data.headers` to `.rows` / `.headers`.
+- The `fields` positional parameter of `get()`, `getAll()`, and `search()` has been replaced by an options object. Migrate: `get(db, key, ["f1"])` → `get(db, key, { fields: ["f1"] })`, `getAll(db, ["f1"])` → `getAll(db, { fields: ["f1"] })`, `search(db, f, v, ["f1"])` → `search(db, f, v, { fields: ["f1"] })`.
+
+### New features
+
+- Schema-aware typed queries: pass `schema` in the options object of `get()`, `getAll()`, or `search()` to receive rows with coerced JavaScript types instead of raw strings. Use an `as const` schema for full TypeScript inference.
+  ```ts
+  const schema = [
+      { type: "int", name: "age" },
+      { type: "bool", name: "active" },
+  ] as const;
+  const result = await client.get(db, key, { schema });
+  // result.rows[0].age is number, result.rows[0].active is boolean
+  ```
+- New exported types: `TypedTable<T>`, `SchemaTypeToJS<T>`, `SchemaToRow<T>`.
+- New exported functions: `coerceValue(value, type)`, `coerceTable(parsed, schema)` for lower-level use.
+- `key`, `time_created`, and `time_updated` are always coerced to `number` when a schema is provided, regardless of whether they appear in the schema definition.
+
 ## 0.4.1
 
 - All table responses (GET, GET_ALL, SEARCH) now include `time_created` and `time_updated` columns automatically.
