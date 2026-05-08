@@ -6,7 +6,7 @@ A lightweight, standalone database written in C. Runs as its own process and com
 
 * Custom in-memory and persistent storage engine
 * Text-based client protocol over TCP sockets
-* Operations: `CREATE`, `ADD`, `UP`, `GET`, `DEL`, `GET_ALL`, `SEARCH`, `COUNT`, `CREATE_INDEX`
+* Operations: `CREATE`, `ADD`, `UP`, `GET`, `DEL`, `DEL_TABLE`, `GET_ALL`, `SEARCH`, `COUNT`, `CREATE_INDEX`
 * Typed homogeneous arrays: `int[]`, `double[]`, `bool[]`, `string[]` (up to 1024 elements)
 * Token-based authentication with admin and readonly roles
 * Minimal dependencies and built-in memory management
@@ -56,6 +56,12 @@ GET users 42 (name, age)
 Delete a record by key.
 ```
 DEL users 42
+```
+
+### DEL_TABLE
+Delete an entire database and all its records.
+```
+DEL_TABLE users
 ```
 
 ### GET_ALL
