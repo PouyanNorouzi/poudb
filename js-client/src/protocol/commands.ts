@@ -74,6 +74,10 @@ export function buildDelKey(name: string): string {
     return `DEL_KEY ${name}`;
 }
 
+export function buildDelTable(db: string): string {
+    return `DEL_TABLE ${db}`;
+}
+
 export function buildListKeys(): string {
     return `LIST_KEYS`;
 }

@@ -10,6 +10,7 @@ import {
     buildCreateIndex,
     buildDel,
     buildDelKey,
+    buildDelTable,
     buildGet,
     buildGetAll,
     buildListKeys,
@@ -209,6 +210,12 @@ export class PoudbClient {
     /** Remove an auth key by name (admin only). */
     public async delKey(name: string): Promise<number> {
         const response = await this.sendRaw(buildDelKey(name));
+        return assertCode(response);
+    }
+
+    /** Delete an entire table/database. */
+    public async delTable(db: string): Promise<number> {
+        const response = await this.sendRaw(buildDelTable(db));
         return assertCode(response);
     }
 

@@ -36,6 +36,7 @@ static CommandResult* execute_add(AddData* data);
 static CommandResult* execute_up(UpdateData* data);
 static CommandResult* execute_get(GetData* data);
 static CommandResult* execute_del(DeleteData* data);
+static CommandResult* execute_del_table(DelTableData* data);
 static CommandResult* execute_get_all(GetAllData* data);
 static CommandResult* execute_search(SearchData* data);
 static CommandResult* execute_count(CountData* data);
@@ -112,6 +113,7 @@ CommandResult* execute_command(Command* cmd) {
         case OP_DEL_KEY:   return execute_del_key(&cmd->data.del_key);
         case OP_LIST_KEYS: return execute_list_keys();
         case OP_WHOAMI:    return execute_whoami(&cmd->data.whoami);
+        case OP_DEL_TABLE: return execute_del_table(&cmd->data.del_table);
         default:
             result = (CommandResult*)malloc(sizeof(CommandResult));
             if(result == NULL) {
@@ -654,6 +656,38 @@ static CommandResult* execute_del(DeleteData* data) {
            data->dbName,
            data->key);
     result->code    = data->key;
+    result->message = NULL;
+    return result;
+}
+
+/**
+ * Execute a DEL_TABLE operation: removes an entire database.
+ */
+static CommandResult* execute_del_table(DelTableData* data) {
+    log_debug("DEL_TABLE: db='%s'", data ? data->dbName : "(null)");
+
+    CommandResult* result = (CommandResult*)malloc(sizeof(CommandResult));
+    if(result == NULL) {
+        return NULL;
+    }
+    result->data = NULL;
+
+    if(data == NULL) {
+        result->code    = -1;
+        result->message = EXECUTION_ERROR_MESSAGES[EX_INVALID_DATA];
+        return result;
+    }
+
+    int remove_result = remove_db(data->dbName);
+    if(remove_result != 0) {
+        log_debug("DEL_TABLE: db '%s' not found", data->dbName);
+        result->code    = -1;
+        result->message = EXECUTION_ERROR_MESSAGES[EX_DB_NOT_FOUND];
+        return result;
+    }
+
+    log_debug("DEL_TABLE: removed database '%s'", data->dbName);
+    result->code    = 1;
     result->message = NULL;
     return result;
 }

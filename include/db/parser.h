@@ -24,6 +24,7 @@ typedef enum {
     OP_DEL_KEY,      /* Delete an auth key (admin only) */
     OP_LIST_KEYS,    /* List auth keys (admin only) */
     OP_WHOAMI,       /* Return the name of the authenticated user */
+    OP_DEL_TABLE,    /* Delete an entire table/database */
     OP_ERROR         /* When an error has occured when parsing */
 } Operation;
 
@@ -40,6 +41,7 @@ typedef enum {
     ER_INVALID_AUTH_FORMAT,   /* Invalid format for AUTH command */
     ER_INVALID_ADD_KEY_FORMAT, /* Invalid format for ADD_KEY command */
     ER_INVALID_DEL_KEY_FORMAT, /* Invalid format for DEL_KEY command */
+    ER_INVALID_DEL_TABLE_FORMAT, /* Invalid format for DEL_TABLE command */
     ER_MISSING_ARGUMENT,      /* Required argument is missing */
     ER_UNEXPECTED_ARGUMENT,   /* Unexpected extra argument provided */
     ER_INVALID_IDENTIFIER,    /* Invalid identifier name (db, table, field) */
@@ -177,6 +179,14 @@ typedef struct {
 } WhoamiData;
 
 /**
+ * Data structure for OP_DEL_TABLE operation
+ * DEL_TABLE <DB>
+ */
+typedef struct {
+    char dbName[MAX_DB_NAME_LENGTH]; /* Name of the database to delete */
+} DelTableData;
+
+/**
  * Command structure representing a parsed command
  */
 typedef struct {
@@ -195,6 +205,7 @@ typedef struct {
         AddKeyData      add_key;
         DelKeyData      del_key;
         WhoamiData      whoami;
+        DelTableData    del_table;
         char            error[MAX_ERROR_LENGTH];
     } data; /* Operation-specific data */
 } Command;

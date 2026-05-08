@@ -17,6 +17,7 @@ export {
     buildCreateIndex,
     buildDel,
     buildDelKey,
+    buildDelTable,
     buildGet,
     buildGetAll,
     buildListKeys,

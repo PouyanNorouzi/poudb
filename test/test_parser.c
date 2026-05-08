@@ -2670,3 +2670,67 @@ Test(parse_up, empty_array_replace) {
     cr_assert_eq(v->value.a->count, 0);
     free_command(cmd, 0);
 }
+
+// ============================================================================
+// parse_del_table tests
+// ============================================================================
+
+Test(parse_del_table, basic) {
+    Command* cmd = parse_command("DEL_TABLE mydb");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_DEL_TABLE);
+    cr_assert_str_eq(cmd->data.del_table.dbName, "mydb");
+    free_command(cmd, 0);
+}
+
+Test(parse_del_table, case_insensitive) {
+    Command* cmd = parse_command("del_table mydb");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_DEL_TABLE);
+    cr_assert_str_eq(cmd->data.del_table.dbName, "mydb");
+    free_command(cmd, 0);
+}
+
+Test(parse_del_table, extra_whitespace) {
+    Command* cmd = parse_command("DEL_TABLE   users_db");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_DEL_TABLE);
+    cr_assert_str_eq(cmd->data.del_table.dbName, "users_db");
+    free_command(cmd, 0);
+}
+
+Test(parse_del_table, missing_db_name) {
+    Command* cmd = parse_command("DEL_TABLE");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+    free_command(cmd, 0);
+}
+
+Test(parse_del_table, extra_argument) {
+    Command* cmd = parse_command("DEL_TABLE mydb extra");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+    free_command(cmd, 0);
+}
+
+Test(parse_del_table, invalid_db_name_starts_with_number) {
+    Command* cmd = parse_command("DEL_TABLE 1db");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+    free_command(cmd, 0);
+}
+
+Test(parse_del_table, invalid_db_name_special_chars) {
+    Command* cmd = parse_command("DEL_TABLE my-db");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_ERROR);
+    free_command(cmd, 0);
+}
+
+Test(parse_del_table, db_name_with_underscore) {
+    Command* cmd = parse_command("DEL_TABLE my_db");
+    cr_assert_not_null(cmd);
+    cr_assert_eq(cmd->op, OP_DEL_TABLE);
+    cr_assert_str_eq(cmd->data.del_table.dbName, "my_db");
+    free_command(cmd, 0);
+}

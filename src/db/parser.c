@@ -10,7 +10,7 @@
 
 #include "auth.h"
 
-#define COMMAND_LENGTH  14
+#define COMMAND_LENGTH  15
 #define TYPE_STR_LENGTH 32
 
 /**
@@ -29,10 +29,11 @@ static const char* COMMAND_STRINGS[] = {"CREATE",
                                         "ADD_KEY",
                                         "DEL_KEY",
                                         "LIST_KEYS",
-                                        "WHOAMI"};
+                                        "WHOAMI",
+                                        "DEL_TABLE"};
 
 const char* ERROR_MESSAGES[] = {
-    "Command must be one of CREATE, ADD, UP, GET, DEL, GET_ALL, SEARCH, COUNT, CREATE_INDEX, AUTH, ADD_KEY, DEL_KEY, LIST_KEYS, WHOAMI", /* ER_INVALID_COMMAND */
+    "Command must be one of CREATE, ADD, UP, GET, DEL, GET_ALL, SEARCH, COUNT, CREATE_INDEX, AUTH, ADD_KEY, DEL_KEY, LIST_KEYS, WHOAMI, DEL_TABLE", /* ER_INVALID_COMMAND */
     "Format must be CREATE <DB> (type field1, type field2, ...)", /* ER_INVALID_CREATE_FORMAT
                                                                    */
     "Format must be ADD <DB> <KEY> (value1, value2, ...)", /* ER_INVALID_ADD_FORMAT
@@ -49,6 +50,7 @@ const char* ERROR_MESSAGES[] = {
     "Format must be AUTH <token>",              /* ER_INVALID_AUTH_FORMAT */
     "Format must be ADD_KEY <name> admin|readonly", /* ER_INVALID_ADD_KEY_FORMAT */
     "Format must be DEL_KEY <name>",            /* ER_INVALID_DEL_KEY_FORMAT */
+    "Format must be DEL_TABLE <DB>",            /* ER_INVALID_DEL_TABLE_FORMAT */
     "Missing required argument: %s",            /* ER_MISSING_ARGUMENT */
     "Unexpected argument: %s",                  /* ER_UNEXPECTED_ARGUMENT */
     "Invalid identifier '%s' (must follow naming rules)", /* ER_INVALID_IDENTIFIER
@@ -67,6 +69,7 @@ static Command* parse_add(const char* input);
 static Command* parse_up(const char* input);
 static Command* parse_get(const char* input);
 static Command* parse_del(const char* input);
+static Command* parse_del_table(const char* input);
 static Command* parse_get_all(const char* input);
 static Command* parse_search(const char* input);
 static Command* parse_count(const char* input);
@@ -153,6 +156,7 @@ Command* parse_command(const char* input) {
         case OP_DEL_KEY:      return parse_del_key(args);
         case OP_LIST_KEYS:    return parse_list_keys();
         case OP_WHOAMI:       return parse_whoami();
+        case OP_DEL_TABLE:    return parse_del_table(args);
         default:              return parse_error(ER_INVALID_COMMAND, NULL);
     }
 }
@@ -234,7 +238,7 @@ void free_command(Command* cmd, int strings_transferred) {
 
         default:
             // OP_DEL, OP_COUNT, OP_CREATE_INDEX, OP_AUTH, OP_DEL_KEY,
-            // OP_LIST_KEYS, OP_WHOAMI, OP_ERROR have no dynamic memory
+            // OP_LIST_KEYS, OP_WHOAMI, OP_DEL_TABLE, OP_ERROR have no dynamic memory
             break;
     }
 
@@ -2808,4 +2812,52 @@ static char* parse_string(const char** ptr) {
 
     *ptr = p + 1;  // Skip closing quote
     return str;
+}
+
+/**
+ * Parse a DEL_TABLE operation command
+ * DEL_TABLE <DB>
+ */
+static Command* parse_del_table(const char* input) {
+    Command* cmd = (Command*)malloc(sizeof(Command));
+    if(cmd == NULL) {
+        return parse_error(ER_OTHER, "Failed to allocate memory");
+    }
+
+    cmd->op = OP_DEL_TABLE;
+    cmd->data.del_table.dbName[0] = '\0';
+
+    char* db_name = NULL;
+    int   token_result = tokenize_single_arg(input, &db_name);
+    if(token_result == -1) {
+        free(cmd);
+        return parse_error(ER_MISSING_ARGUMENT, "database name");
+    }
+    if(token_result == -2) {
+        free(cmd);
+        return parse_error(ER_OTHER, "Failed to allocate memory");
+    }
+
+    if(!is_valid_identifier(db_name)) {
+        char* invalid_name = db_name;
+        free(cmd);
+        Command* err = parse_error(ER_INVALID_IDENTIFIER, invalid_name);
+        free(invalid_name);
+        return err;
+    }
+
+    strncpy(cmd->data.del_table.dbName, db_name, MAX_DB_NAME_LENGTH - 1);
+    cmd->data.del_table.dbName[MAX_DB_NAME_LENGTH - 1] = '\0';
+    free(db_name);
+
+    /* Reject trailing arguments */
+    const char* after = skip_whitespace(input);
+    while(*after && !isspace((unsigned char)*after)) after++;
+    after = skip_whitespace(after);
+    if(*after != '\0') {
+        free(cmd);
+        return parse_error(ER_SYNTAX_ERROR, "unexpected arguments after database name");
+    }
+
+    return cmd;
 }

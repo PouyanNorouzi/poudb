@@ -3079,3 +3079,118 @@ Test(execute_timestamps, updated_at_advances_after_up) {
     cr_assert(row->updated_at >= row->created_at);
     db_free_row(db, row);
 }
+
+// ============================================================================
+// execute_del_table tests
+// ============================================================================
+
+TestSuite(execute_del_table, .init = setup, .fini = teardown);
+
+Test(execute_del_table, removes_existing_db) {
+    Command* create = parse_command("CREATE mydb (int val)");
+    CommandResult* cr_r = execute_command(create);
+    cr_assert_not_null(cr_r);
+    cr_assert_eq(cr_r->code, 1);
+    free(cr_r);
+    free_command(create, 0);
+
+    cr_assert_not_null(find_db("mydb"));
+
+    Command* del = parse_command("DEL_TABLE mydb");
+    cr_assert_not_null(del);
+    cr_assert_eq(del->op, OP_DEL_TABLE);
+    CommandResult* result = execute_command(del);
+    cr_assert_not_null(result);
+    cr_assert_eq(result->code, 1);
+    cr_assert_null(result->message);
+    free(result);
+    free_command(del, 0);
+
+    cr_assert_null(find_db("mydb"));
+}
+
+Test(execute_del_table, db_not_found) {
+    Command* del = parse_command("DEL_TABLE nonexistent");
+    cr_assert_not_null(del);
+    CommandResult* result = execute_command(del);
+    cr_assert_not_null(result);
+    cr_assert(result->code < 0);
+    cr_assert_not_null(result->message);
+    free(result);
+    free_command(del, 0);
+}
+
+Test(execute_del_table, removes_db_with_rows) {
+    Command* create = parse_command("CREATE mydb (int val, string name)");
+    CommandResult* cr_r = execute_command(create);
+    free(cr_r);
+    free_command(create, 0);
+
+    Command* add1 = parse_command("ADD mydb * (10, \"alice\")");
+    CommandResult* ar1 = execute_command(add1);
+    free(ar1);
+    free_command(add1, 1);
+
+    Command* add2 = parse_command("ADD mydb * (20, \"bob\")");
+    CommandResult* ar2 = execute_command(add2);
+    free(ar2);
+    free_command(add2, 1);
+
+    cr_assert_not_null(find_db("mydb"));
+
+    Command* del = parse_command("DEL_TABLE mydb");
+    CommandResult* result = execute_command(del);
+    cr_assert_not_null(result);
+    cr_assert_eq(result->code, 1);
+    free(result);
+    free_command(del, 0);
+
+    cr_assert_null(find_db("mydb"));
+}
+
+Test(execute_del_table, other_dbs_unaffected) {
+    Command* c1 = parse_command("CREATE db1 (int x)");
+    CommandResult* r1 = execute_command(c1);
+    free(r1);
+    free_command(c1, 0);
+
+    Command* c2 = parse_command("CREATE db2 (string y)");
+    CommandResult* r2 = execute_command(c2);
+    free(r2);
+    free_command(c2, 0);
+
+    Command* del = parse_command("DEL_TABLE db1");
+    CommandResult* result = execute_command(del);
+    cr_assert_not_null(result);
+    cr_assert_eq(result->code, 1);
+    free(result);
+    free_command(del, 0);
+
+    cr_assert_null(find_db("db1"));
+    cr_assert_not_null(find_db("db2"));
+}
+
+Test(execute_del_table, recreate_after_delete) {
+    Command* c1 = parse_command("CREATE mydb (int val)");
+    CommandResult* r1 = execute_command(c1);
+    free(r1);
+    free_command(c1, 0);
+
+    Command* del = parse_command("DEL_TABLE mydb");
+    CommandResult* dr = execute_command(del);
+    free(dr);
+    free_command(del, 0);
+
+    cr_assert_null(find_db("mydb"));
+
+    Command* c2 = parse_command("CREATE mydb (string name)");
+    CommandResult* r2 = execute_command(c2);
+    cr_assert_not_null(r2);
+    cr_assert_eq(r2->code, 1);
+    free(r2);
+    free_command(c2, 0);
+
+    DB* db = find_db("mydb");
+    cr_assert_not_null(db);
+    cr_assert_eq(db->fieldsCount, 2);  /* key + name */
+}
