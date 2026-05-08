@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "utils/hashmap.h"
 #include "utils/log.h"
@@ -323,6 +324,8 @@ int db_add_row(DB* db, int key, Data* values, int valueCount) {
     Row newRow;
     newRow.values     = rowValues;
     newRow.valueCount = totalValues;
+    newRow.created_at = time(NULL);
+    newRow.updated_at = newRow.created_at;
 
     if(row_hashmap_insert(db->rowMap, actualKey, newRow, db->rowsCount + 1) !=
        0) {
@@ -359,6 +362,8 @@ Row* db_get_row(DB* db, int key) {
     }
 
     newRow->valueCount = sourceRow->valueCount;
+    newRow->created_at = sourceRow->created_at;
+    newRow->updated_at = sourceRow->updated_at;
 
     // Allocate the values array
     newRow->values = (Data*)malloc(sizeof(Data) * newRow->valueCount);
@@ -500,6 +505,8 @@ int db_update_row(DB*   db,
         log_warn("Failed to rebuild indexes after UP");
     }
 
+    targetRow->updated_at = time(NULL);
+
     return 0;
 }
 
@@ -538,6 +545,19 @@ void db_free_row(DB* db, Row* row) {
     }
 
     free(row);
+}
+
+int db_set_row_timestamps(DB* db, int key, time_t created_at, time_t updated_at) {
+    if(db == NULL) {
+        return -1;
+    }
+    Row* row = row_hashmap_find(db->rowMap, key);
+    if(row == NULL) {
+        return -2;
+    }
+    row->created_at = created_at;
+    row->updated_at = updated_at;
+    return 0;
 }
 
 static Row* find_row(DB* db, int key) {

@@ -1,6 +1,7 @@
 #include <criterion/criterion.h>
 #include <criterion/new/assert.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "db/data_model.h"
 #include "db/operations.h"
@@ -1630,7 +1631,7 @@ Test(execute_get_all, get_all_after_delete) {
     cr_assert_eq(result->code, 2);  // 2 rows remaining
     cr_assert(strstr(result->data, "10") != NULL);
     cr_assert(strstr(result->data, "30") != NULL);
-    cr_assert(strstr(result->data, "20") == NULL);  // Deleted row
+    cr_assert(strstr(result->data, " 20 ") == NULL);  // Deleted row's value not present
 
     free_command_result(result);
     free_command(get_all_cmd, 0);
@@ -2961,4 +2962,120 @@ Test(execute_create, all_array_field_types, .init = setup, .fini = teardown) {
     cr_assert_eq(db->fields[2].type, TYPE_DOUBLE_ARRAY);
     cr_assert_eq(db->fields[3].type, TYPE_BOOL_ARRAY);
     cr_assert_eq(db->fields[4].type, TYPE_STRING_ARRAY);
+}
+
+// ============================================================================
+// Timestamp (time_created / time_updated) tests
+// ============================================================================
+
+TestSuite(execute_timestamps, .init = setup, .fini = teardown);
+
+Test(execute_timestamps, get_shows_timestamp_columns) {
+    Command* create = parse_command("CREATE tsdb (int val)");
+    CommandResult* cr = execute_command(create);
+    free(cr);
+    free_command(create, 0);
+
+    Command* add = parse_command("ADD tsdb * (42)");
+    CommandResult* ar = execute_command(add);
+    free(ar);
+    free_command(add, 1);
+
+    Command* get = parse_command("GET tsdb 1");
+    CommandResult* result = execute_command(get);
+    cr_assert_not_null(result);
+    cr_assert_not_null(result->data);
+    cr_assert(strstr(result->data, "time_created") != NULL);
+    cr_assert(strstr(result->data, "time_updated") != NULL);
+    free_command_result(result);
+    free_command(get, 0);
+}
+
+Test(execute_timestamps, get_all_shows_timestamp_columns) {
+    Command* create = parse_command("CREATE tsdb (int val)");
+    CommandResult* cr = execute_command(create);
+    free(cr);
+    free_command(create, 0);
+
+    Command* add = parse_command("ADD tsdb * (10)");
+    CommandResult* ar = execute_command(add);
+    free(ar);
+    free_command(add, 1);
+
+    Command* get_all = parse_command("GET_ALL tsdb");
+    CommandResult* result = execute_command(get_all);
+    cr_assert_not_null(result);
+    cr_assert_not_null(result->data);
+    cr_assert(strstr(result->data, "time_created") != NULL);
+    cr_assert(strstr(result->data, "time_updated") != NULL);
+    free_command_result(result);
+    free_command(get_all, 0);
+}
+
+Test(execute_timestamps, search_shows_timestamp_columns) {
+    Command* create = parse_command("CREATE tsdb (int val)");
+    CommandResult* cr = execute_command(create);
+    free(cr);
+    free_command(create, 0);
+
+    Command* add = parse_command("ADD tsdb * (99)");
+    CommandResult* ar = execute_command(add);
+    free(ar);
+    free_command(add, 1);
+
+    Command* search = parse_command("SEARCH tsdb val 99");
+    CommandResult* result = execute_command(search);
+    cr_assert_not_null(result);
+    cr_assert_not_null(result->data);
+    cr_assert(strstr(result->data, "time_created") != NULL);
+    cr_assert(strstr(result->data, "time_updated") != NULL);
+    free_command_result(result);
+    free_command(search, 0);
+}
+
+Test(execute_timestamps, created_equals_updated_on_add) {
+    Command* create = parse_command("CREATE tsdb (int val)");
+    CommandResult* cr = execute_command(create);
+    free(cr);
+    free_command(create, 0);
+
+    Command* add = parse_command("ADD tsdb * (7)");
+    CommandResult* ar = execute_command(add);
+    free(ar);
+    free_command(add, 1);
+
+    DB* db = find_db("tsdb");
+    cr_assert_not_null(db);
+    Row* row = db_get_row(db, 1);
+    cr_assert_not_null(row);
+    cr_assert_eq(row->created_at, row->updated_at);
+    cr_assert(row->created_at > 0);
+    db_free_row(db, row);
+}
+
+Test(execute_timestamps, updated_at_advances_after_up) {
+    Command* create = parse_command("CREATE tsdb (int val)");
+    CommandResult* cr = execute_command(create);
+    free(cr);
+    free_command(create, 0);
+
+    Command* add = parse_command("ADD tsdb * (5)");
+    CommandResult* ar = execute_command(add);
+    free(ar);
+    free_command(add, 1);
+
+    /* Force a small sleep so updated_at can differ from created_at */
+    sleep(1);
+
+    Command* up = parse_command("UP tsdb 1 (6)");
+    CommandResult* ur = execute_command(up);
+    free(ur);
+    free_command(up, 0);
+
+    DB* db = find_db("tsdb");
+    cr_assert_not_null(db);
+    Row* row = db_get_row(db, 1);
+    cr_assert_not_null(row);
+    cr_assert(row->updated_at >= row->created_at);
+    db_free_row(db, row);
 }

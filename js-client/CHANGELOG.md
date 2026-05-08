@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.1
+
+- All table responses (GET, GET_ALL, SEARCH) now include `time_created` and `time_updated` columns automatically.
+- Both columns contain Unix epoch integer strings (seconds since 1970).
+- `time_created` is set once when a row is inserted; `time_updated` is refreshed on every UP.
+- Server snapshot format bumped to version 4; snapshots from earlier versions are discarded on load.
+
 ## 0.4.0
 
 - Add array field type support: `"int[]"`, `"double[]"`, `"bool[]"`, `"string[]"` in `SchemaType`.

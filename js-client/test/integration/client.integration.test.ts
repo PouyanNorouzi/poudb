@@ -357,4 +357,97 @@ describe.runIf(integrationEnabled())("poudb integration", () => {
             await client.disconnect();
         }
     });
+
+    // ── Timestamp tests ───────────────────────────────────────────────────────
+
+    it("get includes time_created and time_updated columns", async () => {
+        const client = await createConnectedClient();
+        const db = newDbName();
+
+        try {
+            await client.create(db, [{ type: "int", name: "val" }]);
+            const key = await client.add(db, "*", [99]);
+
+            const result = await client.get(db, key);
+            expect(result.data.headers).toContain("time_created");
+            expect(result.data.headers).toContain("time_updated");
+
+            const row = result.data.rows[0];
+            expect(row).toBeDefined();
+            const tc = Number.parseInt(row!.time_created, 10);
+            const tu = Number.parseInt(row!.time_updated, 10);
+            expect(Number.isNaN(tc)).toBe(false);
+            expect(Number.isNaN(tu)).toBe(false);
+            expect(tc).toBeGreaterThan(0);
+            expect(tc).toBe(tu);
+        } finally {
+            await client.disconnect();
+        }
+    });
+
+    it("getAll includes time_created and time_updated columns", async () => {
+        const client = await createConnectedClient();
+        const db = newDbName();
+
+        try {
+            await client.create(db, [{ type: "string", name: "label" }]);
+            await client.add(db, "*", ["hello"]);
+
+            const result = await client.getAll(db);
+            expect(result.data.headers).toContain("time_created");
+            expect(result.data.headers).toContain("time_updated");
+
+            const row = result.data.rows[0];
+            expect(row).toBeDefined();
+            expect(Number.parseInt(row!.time_created, 10)).toBeGreaterThan(0);
+            expect(Number.parseInt(row!.time_updated, 10)).toBeGreaterThan(0);
+        } finally {
+            await client.disconnect();
+        }
+    });
+
+    it("search includes time_created and time_updated columns", async () => {
+        const client = await createConnectedClient();
+        const db = newDbName();
+
+        try {
+            await client.create(db, [{ type: "string", name: "name" }]);
+            await client.add(db, "*", ["Bob"]);
+
+            const result = await client.search(db, "name", "Bob");
+            expect(result.data.headers).toContain("time_created");
+            expect(result.data.headers).toContain("time_updated");
+        } finally {
+            await client.disconnect();
+        }
+    });
+
+    it("time_updated advances after UP", async () => {
+        const client = await createConnectedClient();
+        const db = newDbName();
+
+        try {
+            await client.create(db, [{ type: "int", name: "val" }]);
+            const key = await client.add(db, "*", [1]);
+
+            const before = await client.get(db, key);
+            const tcBefore = Number.parseInt(before.data.rows[0]!.time_created, 10);
+
+            // wait 1s to ensure time advances
+            await new Promise((resolve) => setTimeout(resolve, 1100));
+
+            await client.up(db, key, [2]);
+
+            const after = await client.get(db, key);
+            const tcAfter = Number.parseInt(after.data.rows[0]!.time_created, 10);
+            const tuAfter = Number.parseInt(after.data.rows[0]!.time_updated, 10);
+
+            // created_at must not change after UP
+            expect(tcAfter).toBe(tcBefore);
+            // updated_at must be >= created_at
+            expect(tuAfter).toBeGreaterThanOrEqual(tcAfter);
+        } finally {
+            await client.disconnect();
+        }
+    });
 });

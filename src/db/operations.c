@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "auth.h"
@@ -58,13 +59,17 @@ static void  build_table_header(char** ptr,
                                 DB*    db,
                                 int*   fieldIndices,
                                 int*   colWidths,
-                                int    numFields);
+                                int    numFields,
+                                int    tc_width,
+                                int    tu_width);
 static void  build_data_row(char** ptr,
                             DB*    db,
                             Row*   row,
                             int*   fieldIndices,
                             int*   colWidths,
-                            int    numFields);
+                            int    numFields,
+                            int    tc_width,
+                            int    tu_width);
 
 /**
  * Execute a parsed command
@@ -1179,6 +1184,18 @@ static char* format_row_as_table(DB*    db,
         lineWidth += colWidths[i] + 3;  // " value |"
     }
 
+    /* Compute timestamp column widths */
+    char tsBuf[32];
+    int  tc_width = (int)strlen("time_created");
+    int  tu_width = (int)strlen("time_updated");
+    snprintf(tsBuf, sizeof(tsBuf), "%ld", (long)row->created_at);
+    int tcval = (int)strlen(tsBuf);
+    if(tcval > tc_width) tc_width = tcval;
+    snprintf(tsBuf, sizeof(tsBuf), "%ld", (long)row->updated_at);
+    int tuval = (int)strlen(tsBuf);
+    if(tuval > tu_width) tu_width = tuval;
+    lineWidth += (tc_width + 3) + (tu_width + 3);
+
     // Allocate buffer for the table (header + separator + data + null)
     // 3 lines: header, separator, data row
     int   bufSize = (lineWidth + 1) * 3 + 1;  // +1 for newlines and null
@@ -1191,8 +1208,8 @@ static char* format_row_as_table(DB*    db,
 
     char* ptr = table;
 
-    build_table_header(&ptr, db, fieldIndices, colWidths, numFields);
-    build_data_row(&ptr, db, row, fieldIndices, colWidths, numFields);
+    build_table_header(&ptr, db, fieldIndices, colWidths, numFields, tc_width, tu_width);
+    build_data_row(&ptr, db, row, fieldIndices, colWidths, numFields, tc_width, tu_width);
     *ptr = '\0';
 
     free(colWidths);
@@ -1313,6 +1330,20 @@ static char* format_rows_as_table(DB* db, char** fields, int fieldCount) {
         lineWidth += colWidths[i] + 3;  // " value |"
     }
 
+    /* Compute timestamp column widths across all rows */
+    char tsBuf[32];
+    int  tc_width = (int)strlen("time_created");
+    int  tu_width = (int)strlen("time_updated");
+    for(int r = 0; r < rowCount; r++) {
+        snprintf(tsBuf, sizeof(tsBuf), "%ld", (long)rows[r]->created_at);
+        int w = (int)strlen(tsBuf);
+        if(w > tc_width) tc_width = w;
+        snprintf(tsBuf, sizeof(tsBuf), "%ld", (long)rows[r]->updated_at);
+        w = (int)strlen(tsBuf);
+        if(w > tu_width) tu_width = w;
+    }
+    lineWidth += (tc_width + 3) + (tu_width + 3);
+
     // Allocate buffer for the table (header + separator + data rows + null)
     int   bufSize = (lineWidth + 1) * (2 + rowCount) + 1;
     char* table   = (char*)malloc(bufSize);
@@ -1325,11 +1356,11 @@ static char* format_rows_as_table(DB* db, char** fields, int fieldCount) {
 
     char* ptr = table;
 
-    build_table_header(&ptr, db, fieldIndices, colWidths, numFields);
+    build_table_header(&ptr, db, fieldIndices, colWidths, numFields, tc_width, tu_width);
 
     // Build data lines for all rows
     for(int r = 0; r < rowCount; r++) {
-        build_data_row(&ptr, db, rows[r], fieldIndices, colWidths, numFields);
+        build_data_row(&ptr, db, rows[r], fieldIndices, colWidths, numFields, tc_width, tu_width);
     }
     *ptr = '\0';
 
@@ -1457,7 +1488,9 @@ static void build_table_header(char** ptr,
                                DB*    db,
                                int*   fieldIndices,
                                int*   colWidths,
-                               int    numFields) {
+                               int    numFields,
+                               int    tc_width,
+                               int    tu_width) {
     // Build header line
     **ptr = '|';
     (*ptr)++;
@@ -1477,6 +1510,19 @@ static void build_table_header(char** ptr,
         **ptr = '|';
         (*ptr)++;
     }
+    /* Timestamp header columns */
+    int tc_padding = tc_width - (int)strlen("time_created");
+    **ptr = ' '; (*ptr)++;
+    strcpy(*ptr, "time_created"); *ptr += strlen("time_created");
+    for(int j = 0; j < tc_padding; j++) { **ptr = ' '; (*ptr)++; }
+    **ptr = ' '; (*ptr)++;
+    **ptr = '|'; (*ptr)++;
+    int tu_padding = tu_width - (int)strlen("time_updated");
+    **ptr = ' '; (*ptr)++;
+    strcpy(*ptr, "time_updated"); *ptr += strlen("time_updated");
+    for(int j = 0; j < tu_padding; j++) { **ptr = ' '; (*ptr)++; }
+    **ptr = ' '; (*ptr)++;
+    **ptr = '|'; (*ptr)++;
     **ptr = '\n';
     (*ptr)++;
 
@@ -1495,6 +1541,15 @@ static void build_table_header(char** ptr,
         **ptr = '|';
         (*ptr)++;
     }
+    /* Timestamp separator columns */
+    **ptr = '-'; (*ptr)++;
+    for(int j = 0; j < tc_width; j++) { **ptr = '-'; (*ptr)++; }
+    **ptr = '-'; (*ptr)++;
+    **ptr = '|'; (*ptr)++;
+    **ptr = '-'; (*ptr)++;
+    for(int j = 0; j < tu_width; j++) { **ptr = '-'; (*ptr)++; }
+    **ptr = '-'; (*ptr)++;
+    **ptr = '|'; (*ptr)++;
     **ptr = '\n';
     (*ptr)++;
 }
@@ -1504,7 +1559,9 @@ static void build_data_row(char** ptr,
                            Row*   row,
                            int*   fieldIndices,
                            int*   colWidths,
-                           int    numFields) {
+                           int    numFields,
+                           int    tc_width,
+                           int    tu_width) {
     char valueBuf[256];
 
     **ptr = '|';
@@ -1562,6 +1619,23 @@ static void build_data_row(char** ptr,
 
         free(arrStr);
     }
+    /* Timestamp data columns */
+    char tsBuf[32];
+    int tsLen, tsPad;
+    snprintf(tsBuf, sizeof(tsBuf), "%ld", (long)row->created_at);
+    tsLen = (int)strlen(tsBuf); tsPad = tc_width - tsLen;
+    **ptr = ' '; (*ptr)++;
+    memcpy(*ptr, tsBuf, (size_t)tsLen); *ptr += tsLen;
+    for(int j = 0; j < tsPad; j++) { **ptr = ' '; (*ptr)++; }
+    **ptr = ' '; (*ptr)++;
+    **ptr = '|'; (*ptr)++;
+    snprintf(tsBuf, sizeof(tsBuf), "%ld", (long)row->updated_at);
+    tsLen = (int)strlen(tsBuf); tsPad = tu_width - tsLen;
+    **ptr = ' '; (*ptr)++;
+    memcpy(*ptr, tsBuf, (size_t)tsLen); *ptr += tsLen;
+    for(int j = 0; j < tsPad; j++) { **ptr = ' '; (*ptr)++; }
+    **ptr = ' '; (*ptr)++;
+    **ptr = '|'; (*ptr)++;
     **ptr = '\n';
     (*ptr)++;
 }
@@ -1717,6 +1791,20 @@ static char* format_search_results(DB*    db,
         lineWidth += colWidths[i] + 3;  // " value |"
     }
 
+    /* Compute timestamp column widths across all matching rows */
+    char tsBuf[32];
+    int  tc_width = (int)strlen("time_created");
+    int  tu_width = (int)strlen("time_updated");
+    for(int r = 0; r < matchCount; r++) {
+        snprintf(tsBuf, sizeof(tsBuf), "%ld", (long)matchingRows[r]->created_at);
+        int w = (int)strlen(tsBuf);
+        if(w > tc_width) tc_width = w;
+        snprintf(tsBuf, sizeof(tsBuf), "%ld", (long)matchingRows[r]->updated_at);
+        w = (int)strlen(tsBuf);
+        if(w > tu_width) tu_width = w;
+    }
+    lineWidth += (tc_width + 3) + (tu_width + 3);
+
     // Allocate buffer for the table (header + separator + data rows + null)
     int   bufSize = (lineWidth + 1) * (2 + matchCount) + 1;
     char* table   = (char*)malloc(bufSize);
@@ -1728,7 +1816,7 @@ static char* format_search_results(DB*    db,
 
     char* ptr = table;
 
-    build_table_header(&ptr, db, fieldIndices, colWidths, numFields);
+    build_table_header(&ptr, db, fieldIndices, colWidths, numFields, tc_width, tu_width);
 
     // Build data lines for matching rows
     for(int r = 0; r < matchCount; r++) {
@@ -1737,7 +1825,9 @@ static char* format_search_results(DB*    db,
                        matchingRows[r],
                        fieldIndices,
                        colWidths,
-                       numFields);
+                       numFields,
+                       tc_width,
+                       tu_width);
     }
     *ptr = '\0';
 

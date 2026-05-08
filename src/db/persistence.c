@@ -8,10 +8,11 @@
 
 #include "auth.h"
 #include "db/data_model.h"
+#include "utils/log.h"
 
 #define SNAPSHOT_MAGIC       "PDBSNAP"
 #define SNAPSHOT_MAGIC_SIZE  7
-#define SNAPSHOT_VERSION     3U
+#define SNAPSHOT_VERSION     4U
 #define NULL_STRING_SENTINEL UINT32_MAX
 #define DEFAULT_SNAPSHOT     "poudb.snapshot"
 
@@ -30,12 +31,14 @@ static int write_u8(FILE* fp, uint8_t v);
 static int write_u16(FILE* fp, uint16_t v);
 static int write_u32(FILE* fp, uint32_t v);
 static int write_i32(FILE* fp, int32_t v);
+static int write_i64(FILE* fp, int64_t v);
 static int write_f64(FILE* fp, double v);
 /* Primitive binary readers used by snapshot decoding. */
 static int read_u8(FILE* fp, uint8_t* out);
 static int read_u16(FILE* fp, uint16_t* out);
 static int read_u32(FILE* fp, uint32_t* out);
 static int read_i32(FILE* fp, int32_t* out);
+static int read_i64(FILE* fp, int64_t* out);
 static int read_f64(FILE* fp, double* out);
 /* String serialization helpers (with explicit NULL sentinel support). */
 static int   write_string(FILE* fp, const char* s);
@@ -182,10 +185,17 @@ int persistence_load_all(const char* snapshotPath) {
     }
 
     uint32_t version;
-    if(read_u32(fp, &version) != 0 ||
-       (version != 1U && version != 2U && version != SNAPSHOT_VERSION)) {
+    if(read_u32(fp, &version) != 0) {
         fclose(fp);
-        return -1; /* Version mismatch; cannot load. */
+        return -1;
+    }
+    if(version != SNAPSHOT_VERSION) {
+        fclose(fp);
+        /* Discard snapshots from older versions — caller starts fresh. */
+        log_warn("Snapshot version %u is not supported (expected %u); "
+                 "discarding snapshot and starting with empty state.",
+                 version, SNAPSHOT_VERSION);
+        return 0;
     }
 
     /* Read database count. */
@@ -298,6 +308,18 @@ int persistence_load_all(const char* snapshotPath) {
                 return -1;
             }
 
+            /* Read and restore original timestamps. */
+            int64_t created_ts, updated_ts;
+            if(read_i64(fp, &created_ts) != 0 || read_i64(fp, &updated_ts) != 0) {
+                free(values);
+                free(fields);
+                fclose(fp);
+                free_db_storage();
+                init_db_storage();
+                return -1;
+            }
+            db_set_row_timestamps(db, (int)key, (time_t)created_ts, (time_t)updated_ts);
+
             free(values);
         }
 
@@ -384,6 +406,11 @@ static int write_i32(FILE* fp, int32_t v) {
     return fwrite(&v, sizeof(v), 1, fp) == 1 ? 0 : -1;
 }
 
+/* Primitive binary writer for int64_t. */
+static int write_i64(FILE* fp, int64_t v) {
+    return fwrite(&v, sizeof(v), 1, fp) == 1 ? 0 : -1;
+}
+
 /* Primitive binary writer for double. */
 static int write_f64(FILE* fp, double v) {
     return fwrite(&v, sizeof(v), 1, fp) == 1 ? 0 : -1;
@@ -406,6 +433,11 @@ static int read_u32(FILE* fp, uint32_t* out) {
 
 /* Primitive binary reader for int32_t. */
 static int read_i32(FILE* fp, int32_t* out) {
+    return fread(out, sizeof(*out), 1, fp) == 1 ? 0 : -1;
+}
+
+/* Primitive binary reader for int64_t. */
+static int read_i64(FILE* fp, int64_t* out) {
     return fread(out, sizeof(*out), 1, fp) == 1 ? 0 : -1;
 }
 
@@ -534,6 +566,12 @@ static int write_row_values(FILE* fp, DB* db, Row* row) {
             }
             default: return -1;
         }
+    }
+
+    /* Write row timestamps */
+    if(write_i64(fp, (int64_t)row->created_at) != 0 ||
+       write_i64(fp, (int64_t)row->updated_at) != 0) {
+        return -1;
     }
 
     return 0;

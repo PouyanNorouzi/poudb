@@ -2,6 +2,7 @@
 #define DATA_MODEL_H
 
 #include <stdbool.h>
+#include <time.h>
 #define MAX_DB_NAME_LENGTH    64
 #define MAX_FIELD_NAME_LENGTH 64
 #define INITIAL_ROW_CAPACITY  16
@@ -69,8 +70,10 @@ struct ArrayData {
  * Row structure representing a database record
  */
 typedef struct {
-    Data* values;     /* Array of values in this row (values[0] is the key) */
-    int   valueCount; /* Number of values in this row */
+    Data*  values;     /* Array of values in this row (values[0] is the key) */
+    int    valueCount; /* Number of values in this row */
+    time_t created_at; /* Unix timestamp when row was inserted */
+    time_t updated_at; /* Unix timestamp when row was last updated */
 } Row;
 
 /**
@@ -213,6 +216,18 @@ int db_update_row(DB*   db,
  * @return 0 on success, -1 if db is NULL, -2 if row not found
  */
 int db_delete_row(DB* db, int key);
+
+/**
+ * Overwrite the stored timestamps on an existing row
+ * Used by persistence to restore original timestamps after loading
+ *
+ * @param db Pointer to the database
+ * @param key Key of the row to update
+ * @param created_at Original creation timestamp to restore
+ * @param updated_at Original update timestamp to restore
+ * @return 0 on success, -1 if db is NULL, -2 if row not found
+ */
+int db_set_row_timestamps(DB* db, int key, time_t created_at, time_t updated_at);
 
 /**
  * Free a row that was returned by db_get_row
