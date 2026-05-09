@@ -1,9 +1,11 @@
 #include "main.h"
 
+#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/signalfd.h>
 #include <unistd.h>
 
 #include "auth.h"
@@ -16,7 +18,6 @@
 #include "net.h"
 #include "utils/autosave.h"
 #include "utils/log.h"
-#include "utils/stdin.h"
 
 static char g_snapshotPath[RUNTIME_CONFIG_PATH_MAX] = {0};
 
@@ -33,7 +34,8 @@ static void cleanup_handler(void) {
 }
 
 int main(int argc, char* argv[]) {
-    int               serverfd, eventfd, res, i, maxEvents;
+    int               serverfd, eventfd, res, i, maxEvents, sigfd;
+    sigset_t          sigmask;
     AutosaveState     autosaveState;
     bool              keepRunning;
     ConnectionManager cm;
@@ -98,33 +100,51 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    sigemptyset(&sigmask);
+    sigaddset(&sigmask, SIGTERM);
+    sigaddset(&sigmask, SIGINT);
+    if(sigprocmask(SIG_BLOCK, &sigmask, NULL) == -1) {
+        log_errno("sigprocmask");
+        free(events);
+        exit(EXIT_FAILURE);
+    }
+    sigfd = signalfd(-1, &sigmask, SFD_CLOEXEC);
+    if(sigfd == -1) {
+        log_errno("signalfd");
+        free(events);
+        exit(EXIT_FAILURE);
+    }
+
     atexit(cleanup_handler);
 
     res = create_server(config.port, config.maxConnections);
     if(res == -1) {
         free(events);
+        close(sigfd);
         exit(EXIT_FAILURE);
     }
     serverfd = res;
     log_info("Running on port %d", config.port);
-    log_info("Type Q at any time to exit");
 
     if(init_connection_manager(&cm, config.maxConnections) == -1) {
         free(events);
         close(serverfd);
+        close(sigfd);
         exit(EXIT_FAILURE);
     }
 
     if(watch_fd(&cm, serverfd, EPOLLIN) == -1) {
         free(events);
         close(serverfd);
+        close(sigfd);
         destroy_connection_manager(&cm);
         exit(EXIT_FAILURE);
     }
 
-    if(watch_fd(&cm, STDIN_FILENO, EPOLLIN) == -1) {
+    if(watch_fd(&cm, sigfd, EPOLLIN) == -1) {
         free(events);
         close(serverfd);
+        close(sigfd);
         destroy_connection_manager(&cm);
         exit(EXIT_FAILURE);
     }
@@ -135,6 +155,7 @@ int main(int argc, char* argv[]) {
         if(res == -1) {
             free(events);
             close(serverfd);
+            close(sigfd);
             destroy_connection_manager(&cm);
             exit(EXIT_FAILURE);
         }
@@ -142,11 +163,14 @@ int main(int argc, char* argv[]) {
         for(i = 0; i < res; i++) {
             eventfd = events[i].data.fd;
 
-            if(eventfd == STDIN_FILENO) {
-                res = handle_stdin_input();
-                if(res == 1) {
-                    keepRunning = false;
+            if(eventfd == sigfd) {
+                struct signalfd_siginfo siginfo;
+                ssize_t nbytes = read(sigfd, &siginfo, sizeof(siginfo));
+                if(nbytes == (ssize_t)sizeof(siginfo)) {
+                    log_info("Received signal %u, shutting down",
+                             siginfo.ssi_signo);
                 }
+                keepRunning = false;
             } else if(eventfd == serverfd) {
                 int clientfd = accept_connection(serverfd);
                 if(clientfd != -1) {
@@ -243,5 +267,6 @@ int main(int argc, char* argv[]) {
     free(events);
     destroy_connection_manager(&cm);
     close(serverfd);
+    close(sigfd);
     return 0;
 }
